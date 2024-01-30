@@ -1,0 +1,110 @@
+import * as assert from 'assert';
+import { expectSingleResult, expectEOF, ParseError } from 'typescript-parsec';
+import { newMarcSpecLexer, subTermSet, SubTermSet, characterSpec, IndexSpec, CharacterSpec, FieldSpec, TokenType, subtermFieldOrSubfieldOrIndicatorSpec, SubfieldCode, SubfieldSpec, IndicatorSpec, subSpec, ComparisonString, MARCSpec, marcSpec, parseMarcSpec } from '../lib/marc-spec';
+
+
+test('MarcSpec: character_Spec', () => {
+
+    const lexer = newMarcSpecLexer();
+
+    const t1 = lexer.parse('/0');
+    assert.strictEqual(t1.kind, TokenType.BEGIN_CHARACTER);
+
+    const t2 = t1.next;
+    assert.strictEqual(t2.kind, TokenType.ZERO);
+
+    const parse = (input: string) => expectSingleResult(expectEOF(characterSpec.parse(newMarcSpecLexer().parse(input))));
+    const zero = parse('/0');
+
+    assert.deepStrictEqual(zero, new CharacterSpec(0));
+
+    const one = parse('/1');
+    assert.deepStrictEqual(one, new CharacterSpec(1));
+
+
+    const other = parse('/101');
+    assert.deepStrictEqual(other, new CharacterSpec(101));
+
+    const hash = parse('/#');
+    assert.deepStrictEqual(hash, new CharacterSpec('#'));
+
+    const range1 = parse('/0-1');
+    assert.deepStrictEqual(range1, new CharacterSpec({ start: 0, end: 1 }));
+
+    const range2 = parse('/2-10');
+    assert.deepStrictEqual(range2, new CharacterSpec({ start: 2, end: 10 }));
+
+    const range3 = parse('/2-#');
+    assert.deepStrictEqual(range3, new CharacterSpec({ start: 2, end: '#' }));
+
+    const range4 = parse('/0-#');
+    assert.deepStrictEqual(range4, new CharacterSpec({ start: 0, end: '#' }));
+
+    const range5 = parse('/100-#');
+    assert.deepStrictEqual(range5, new CharacterSpec({ start: 100, end: '#' }));
+
+});
+
+test('MarcSpec: fieldSpec', () => {
+    const parse = (input: string) => expectSingleResult(expectEOF(subtermFieldOrSubfieldOrIndicatorSpec.parse(newMarcSpecLexer().parse(input))));
+
+    const ldr = parse('LDR');
+    assert.deepStrictEqual(ldr, new FieldSpec('LDR', undefined, undefined, []));
+
+    const ldr9 = parse('ldr/9');
+    assert.deepStrictEqual(ldr9, new FieldSpec('LDR', undefined, new CharacterSpec(9), []));
+
+    const m020 = parse('020[0-#]/0-#');
+    assert.deepStrictEqual(m020, new FieldSpec('020', new IndexSpec({ start: 0, end: '#' }), new CharacterSpec({ start: 0, end: '#' }), []));
+
+    const m020a = parse('020[10-11]$a-c[12-13]/14-#');
+    assert.deepStrictEqual(m020a, new SubfieldSpec('020', new IndexSpec({ start: 10, end: 11 }), new SubfieldCode('a', 'c'), new IndexSpec({ start: 12, end: 13 }), new CharacterSpec({ start: 14, end: '#' }), []));
+
+    const ind = parse('100[100-#]^1');
+    assert.deepStrictEqual(ind, new IndicatorSpec('100', 1, new IndexSpec({ start: 100, end: '#' }), []));
+});
+
+test('MarcSpec: subTermSet', () => {
+    const parse = (input: string) => expectSingleResult(expectEOF(subTermSet.parse(newMarcSpecLexer().parse(input))));
+
+    const s1 = parse('001');
+    assert.deepStrictEqual(s1(''), new SubTermSet(undefined, undefined, new FieldSpec('001', undefined, undefined, [])));
+
+    const s2 = parse('?001');
+    assert.deepStrictEqual(s2(''), new SubTermSet(undefined, '?', new FieldSpec('001', undefined, undefined, [])));
+});
+
+test('MarcSpec: subSpec', () => {
+    const parse = (input: string) => expectSingleResult(expectEOF(subSpec.parse(newMarcSpecLexer().parse(input))));
+
+    const s1 = parse('{001}');
+    assert.deepStrictEqual(s1(''), [new SubTermSet(undefined, undefined, new FieldSpec('001', undefined, undefined, []))]);
+
+    const s2 = parse('{001|020[0]$a!=\\foo}');
+    assert.deepStrictEqual(s2(''), [
+        new SubTermSet(undefined, undefined, new FieldSpec('001', undefined, undefined, [])),
+        new SubTermSet(new SubfieldSpec('020', new IndexSpec(0), new SubfieldCode('a', 'a'), undefined, undefined, []), '!=', new ComparisonString('foo'))
+    ]);
+
+    const empty = parse('');
+    assert.deepStrictEqual(empty(''), []);
+});
+
+test('MarcSpec: MARCSpec', () => {
+    const parse = (input: string) => expectSingleResult(expectEOF(marcSpec.parse(newMarcSpecLexer().parse(input))));
+
+    const m = parse('LDR');
+    assert.deepStrictEqual(m, new MARCSpec(new FieldSpec('LDR', undefined, undefined, [])));
+
+    const m0 = parse('001/2-#{\\foo\\=\\{\\}\\!\\\\=[0]}');
+    assert.deepStrictEqual(m0, new MARCSpec(new FieldSpec('001', undefined, new CharacterSpec({ start: 2, end: '#' }), [new SubTermSet(new ComparisonString('foo={}!\\'), '=', new FieldSpec('001', new IndexSpec(0), undefined, []))])));
+
+});
+
+test('MarcSpec: parseMarcSpec', () => {
+    const result = parseMarcSpec('foo\nbar\n');
+    assert.ok(!(result instanceof MARCSpec));
+
+    assert.strictEqual(result.message, "foo");
+    assert.strictEqual(result.pos, { index: 3, startColumn: 4, endColumn: 5, startRow: 1, endRow: 2 });
+});
