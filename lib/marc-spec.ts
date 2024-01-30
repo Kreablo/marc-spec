@@ -1,4 +1,4 @@
-import { apply, kright, kmid, alt_sc, opt_sc, list_sc, tok, seq, Token, Parser, expectEOF, ParseError, TokenError } from 'typescript-parsec';
+import { apply, kright, kmid, alt_sc, opt_sc, list_sc, tok, seq, Token, Parser, expectEOF, ParseError } from 'typescript-parsec';
 import { AdvancedRegexpLexer, AdvancedRegexpLexerContext } from './advanced-regexp-lexer';
 
 export enum TokenType {
@@ -78,17 +78,18 @@ export class IndicatorSpec {
     ) { }
 }
 
+const unescapeSpaceRe: RegExp = /\\s/g;
+const unescapeCompStringRe: RegExp = /\\([\$\{\}!=~\?\|\}\\])/g;
+const escapeCompStringRe: RegExp = /([\$\{\}!=~\?\|\}\\])/g;
+
+
 export class ComparisonString {
-
-    private readonly reSpace: RegExp = /\\s/g;
-
-    private readonly reUnescape: RegExp = /\\([\$\{\}!=~\?\|\}\\])/g;
 
     public readonly theString: string;
 
     constructor(compString: string) {
-        const s = compString.replace(this.reSpace, (_1, _2) => ' ');
-        this.theString = s.replace(this.reUnescape, (_, c) => c);
+        const s = compString.replace(unescapeSpaceRe, (_1, _2) => ' ');
+        this.theString = s.replace(unescapeCompStringRe, (_, c) => c);
     }
 }
 
@@ -100,7 +101,7 @@ export class SubTermSet {
     constructor(
         public readonly leftHand: SubTerm | undefined,
         public readonly operatorStr: string,
-        public readonly righHand: SubTerm
+        public readonly rightHand: SubTerm
     ) { }
 }
 
@@ -239,13 +240,15 @@ export const subfieldCode: Parser<TokenType, SubfieldCode> = apply(seq(tok(Token
 export const abbrSubfieldSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[]) => SubfieldSpec> = apply(seq(subfieldCode, opt_sc(index), opt_sc(characterSpec)),
     ([code, ispec, cspec]) => subfieldSpecGenerator(code, ispec, cspec));
 
-export const abbreviation: Parser<TokenType, (tag: string) => SubfieldSpec | FieldSpec | IndicatorSpec> = apply(alt_sc(abbrSubfieldSpec, alt_sc(seq(index, alt_sc(optFieldSpecParam, abrIndicatorSpec)), abrIndicatorSpec)),
+export const abbreviation: Parser<TokenType, (tag: string) => SubfieldSpec | FieldSpec | IndicatorSpec> = apply(alt_sc(abbrSubfieldSpec, alt_sc(seq(index, alt_sc(optFieldSpecParam, abrIndicatorSpec)), abrIndicatorSpec, characterSpec)),
     (alt1) => {
         if (typeof alt1 === 'function') {
             return (tag) => alt1(tag, undefined, []);
-        } else {
+        } else if (Array.isArray(alt1)) {
             const [index, alt2] = alt1;
             return (tag) => alt2(tag, index, []);
+        } else {
+            return (tag) => new FieldSpec(tag, undefined, alt1, []);
         }
     });
 
@@ -316,4 +319,94 @@ export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input: s
         }
     }
     return { kind: 'Error', message: 'unknown-error' };
+};
+
+export const serializeMarcSpec: (marcSpec: MARCSpec) => string = (marcSpec: MARCSpec) => {
+    const { spec } = marcSpec;
+
+    if (spec instanceof FieldSpec) {
+        return serializeFieldSpec(spec, null);
+    }
+
+    if (spec instanceof IndicatorSpec) {
+        return serializeIndicatorSpec(spec, null);
+    }
+
+    return serializeSubfieldSpec(spec, null);
+};
+
+
+export const serializeFieldSpec: (fieldSpec: FieldSpec, abrTag: string | null) => string = (fieldSpec, abrTag) => {
+    const { tag, index, characterSpec, subSpec } = fieldSpec;
+    return (tag === abrTag ? '' : tag) + serializeIndex(index) + serializeCharacterSpec(characterSpec) + serializeSubSpec(subSpec, tag);
+};
+
+export const serializeIndicatorSpec: (indicatorSpec: IndicatorSpec, abrTag: string | null) => string = (indicatorSpec, abrTag) => {
+    const { tag, indicator, index, subSpec } = indicatorSpec;
+    return (tag === abrTag ? '' : tag) + serializeIndex(index) + '^' + indicator + serializeSubSpec(subSpec, tag);
+};
+
+export const serializeSubfieldSpec: (subfieldSpec: SubfieldSpec, abrTag: string) => string = (subfieldSpec, abrTag) => {
+    const { tag, index, code, subindex, characterSpec, subSpec } = subfieldSpec;
+    return (tag === abrTag ? '' : tag) + serializeIndex(index) + serializeCode(code) + serializeIndex(subindex) + serializeCharacterSpec(characterSpec) + serializeSubSpec(subSpec, tag);
+};
+
+export const serializeIndex: (index: IndexSpec | undefined) => string = (index) => {
+    if (index === undefined) {
+        return '';
+    }
+    const { item } = index;
+    if (typeof item === "object") {
+        const { start, end } = item;
+        return `[${start}-${end}]`;
+    }
+    return `[${item}]`;
+};
+
+export const serializeCharacterSpec: (charSpec: CharacterSpec | undefined) => string = (charSpec) => {
+    if (charSpec === undefined) {
+        return '';
+    }
+    const { item } = charSpec;
+    if (typeof item === "object") {
+        const { start, end } = item;
+        return `/${start}-${end}`;
+    }
+    return `/${item}`;
+};
+
+export const serializeCode: (code: SubfieldCode) => string = (code) => {
+    const { start, end } = code;
+    if (start === end) {
+        return '$' + start;
+    }
+    return `\$${start}-${end}`;
+};
+
+export const serializeSubSpec: (subSpec: SubTermSet[], abrTag: string | null) => string = (subSpec, abrTag) => {
+    if (subSpec.length === 0) {
+        return '';
+    }
+    return '{' + subSpec.map((t) => serializeTermSet(t, abrTag)).join('|') + '}';
+};
+
+export const serializeTermSet: (termSet: SubTermSet, abrTag: string | null) => string = (termSet, abrTag) => {
+    const { leftHand, operatorStr, rightHand } = termSet;
+    return serializeTerm(leftHand, abrTag) + operatorStr + serializeTerm(rightHand, abrTag);
+};
+
+export const serializeTerm: (term: SubTerm, abrTag: string | null) => string = (term, abrTag) => {
+    if (term instanceof FieldSpec) {
+        return serializeFieldSpec(term, abrTag);
+    }
+    if (term instanceof SubfieldSpec) {
+        return serializeSubfieldSpec(term, abrTag);
+    }
+    if (term instanceof IndicatorSpec) {
+        return serializeIndicatorSpec(term, abrTag);
+    }
+    const { theString } = term;
+    const s0 = theString.replace(escapeCompStringRe, '\\$&');
+    const s1 = s0.replace(/ /g, '\\s');
+    return '\\' + s1;
 };

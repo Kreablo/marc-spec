@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { expectSingleResult, expectEOF, ParseError } from 'typescript-parsec';
-import { newMarcSpecLexer, subTermSet, SubTermSet, characterSpec, IndexSpec, CharacterSpec, FieldSpec, TokenType, subtermFieldOrSubfieldOrIndicatorSpec, SubfieldCode, SubfieldSpec, IndicatorSpec, subSpec, ComparisonString, MARCSpec, marcSpec, parseMarcSpec } from '../lib/marc-spec';
+import { newMarcSpecLexer, subTermSet, SubTermSet, characterSpec, IndexSpec, CharacterSpec, FieldSpec, TokenType, subtermFieldOrSubfieldOrIndicatorSpec, SubfieldCode, SubfieldSpec, IndicatorSpec, subSpec, ComparisonString, MARCSpec, marcSpec, parseMarcSpec, serializeMarcSpec } from '../lib/marc-spec';
 
 
 test('MarcSpec: character_Spec', () => {
@@ -105,6 +105,22 @@ test('MarcSpec: parseMarcSpec', () => {
     const result = parseMarcSpec('foo\nbar\n');
     assert.ok(!(result instanceof MARCSpec));
 
-    assert.strictEqual(result.message, "foo");
-    assert.strictEqual(result.pos, { index: 3, startColumn: 4, endColumn: 5, startRow: 1, endRow: 2 });
+    assert.strictEqual(result.message, "failed-lexing-top-context");
+    assert.deepStrictEqual(result.pos, { index: 3, columnBegin: 4, columnEnd: 4, rowBegin: 1, rowEnd: 1 });
+});
+
+test('MarcSpec: serializeMarcSpec', () => {
+    const testSerialize = (input: string) => {
+        const result = parseMarcSpec(input);
+        if (result instanceof MARCSpec) {
+            assert.strictEqual(serializeMarcSpec(result), input);
+        } else {
+            console.log(result);
+            assert.ok(false);
+        }
+    };
+
+    testSerialize('LDR');
+    testSerialize('999[0-#]^2');
+    testSerialize('998[1-2]$a-c[0-1]/2-3{/1!=\\1|\\\\\\~997$a}');
 });
