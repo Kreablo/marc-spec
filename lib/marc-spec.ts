@@ -32,7 +32,6 @@ export type Range = {
 };
 
 export class CharacterSpec {
-
     constructor(public readonly item: Range | Position) {
     }
 }
@@ -105,6 +104,11 @@ export class SubTermSet {
     ) { }
 }
 
+export class MARCSpec {
+    constructor(
+        public readonly spec: FieldSpec | SubfieldSpec | IndicatorSpec
+    ) { }
+};
 
 const fieldSpecGenerator: (cspec: CharacterSpec | undefined) => (tag: string, index: IndexSpec, subSpec: SubTermSet[]) => FieldSpec = (cspec) =>
     (tag: string, index: IndexSpec, subSpec: SubTermSet[]) => new FieldSpec(tag.toUpperCase(), index, cspec, subSpec);
@@ -291,12 +295,6 @@ export const subSpec: Parser<TokenType, (tag: string) => SubTermSet[]> =
     apply(opt_sc(
         kmid(tok(TokenType.BEGIN_SUBSPEC), apply(list_sc(subTermSet, tok(TokenType.SUBTERM_SEPARATOR)), (s) => (tag: string) => s.map((st) => st(tag))), tok(TokenType.END_SUBSPEC))
     ), (mspec: undefined | ((tag: string) => SubTermSet[])) => (mspec === undefined ? (_) => [] : mspec));
-
-export class MARCSpec {
-    constructor(
-        public readonly spec: FieldSpec | SubfieldSpec | IndicatorSpec
-    ) { }
-};
 
 export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(partFieldOrSubfieldOrIndicatorSpec, subSpec), ([specPart, subSpec]) => new MARCSpec(specPart(subSpec)));
 
