@@ -1,4 +1,4 @@
-import { apply, kright, kmid, alt_sc, alt, opt_sc, list_sc, tok, seq, Token, Parser, expectEOF, ParseError } from 'typescript-parsec';
+import { apply, kright, kmid, alt_sc, alt, opt_sc, list_sc, rep_sc, tok, seq, Token, Parser, expectEOF, ParseError } from 'typescript-parsec';
 import { AdvancedRegexpLexer, AdvancedRegexpLexerContext } from './advanced-regexp-lexer';
 
 export enum TokenType {
@@ -46,7 +46,7 @@ export class ItemSpec {
     constructor(
         public readonly tag: string | undefined,
         public readonly index: IndexSpec | undefined,
-        public readonly subSpec: SubTermSet[]
+        public readonly subSpec: SubTermSet[][]
     ) {
     }
 }
@@ -65,7 +65,7 @@ export class FieldSpec extends ItemSpec {
         tag: string,
         index: IndexSpec | undefined,
         public readonly characterSpec: CharacterSpec | undefined,
-        subSpec: SubTermSet[]
+        subSpec: SubTermSet[][]
     ) {
         super(tag, index, subSpec);
     }
@@ -94,7 +94,7 @@ export class SubfieldSpec extends ItemSpec {
         public readonly code: SubfieldCode,
         public readonly subindex: IndexSpec | undefined,
         public readonly characterSpec: CharacterSpec | undefined,
-        subSpec: SubTermSet[]
+        subSpec: SubTermSet[][]
     ) {
         super(tag, index, subSpec);
     }
@@ -116,7 +116,7 @@ export class IndicatorSpec extends ItemSpec {
         tag: string,
         public readonly indicator: number,
         index: IndexSpec | undefined,
-        subSpec: SubTermSet[]
+        subSpec: SubTermSet[][]
     ) {
         super(tag, index, subSpec);
     }
@@ -345,7 +345,7 @@ export const characterSpec: Parser<TokenType, CharacterSpec> = apply(kright(tok(
 
 export const index: Parser<TokenType, IndexSpec> = apply(kmid(tok(TokenType.BEGIN_INDEX), rangeOrPosition, tok(TokenType.END_INDEX)), (item) => new IndexSpec(item));
 
-export const indicatorSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[]) => IndicatorSpec> = apply(kright(tok(TokenType.INDICATOR_MARKER), tok(TokenType.INDICATOR)),
+export const indicatorSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[][]) => IndicatorSpec> = apply(kright(tok(TokenType.INDICATOR_MARKER), tok(TokenType.INDICATOR)),
     (indicator) => {
         const ind = indicator.text === '1' ? 1 : 2;
         return (tag, index, subSpec) => new IndicatorSpec(tag, ind, index, subSpec);
@@ -357,7 +357,7 @@ export const abbrIndicatorSpec: Parser<TokenType, (index: IndexSpec | undefined)
         return (index: IndexSpec | undefined) => new AbbrIndicatorSpec(ind, index);
     });
 
-export const fieldSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[]) => FieldSpec> = apply(opt_sc(characterSpec),
+export const fieldSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[][]) => FieldSpec> = apply(opt_sc(characterSpec),
     (cspec) => (tag, index, subSpec) => new FieldSpec(tag, index, cspec, subSpec));
 
 export const abbrFieldSpec: Parser<TokenType, (index: IndexSpec | undefined) => AbbrFieldSpec> = apply(opt_sc(characterSpec),
@@ -369,7 +369,7 @@ export const subfieldCode: Parser<TokenType, SubfieldCode> = apply(seq(tok(Token
 export const abbrSubfieldSpec: Parser<TokenType, (index: IndexSpec | undefined) => AbbrSubfieldSpec> = apply(seq(subfieldCode, opt_sc(index), opt_sc(characterSpec)),
     ([code, ispec, cspec]) => (index) => new AbbrSubfieldSpec(index, code, ispec, cspec));
 
-export const subfieldSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[]) => SubfieldSpec> =
+export const subfieldSpec: Parser<TokenType, (tag: string, index: IndexSpec | undefined, subSpec: SubTermSet[][]) => SubfieldSpec> =
     apply(seq(subfieldCode, opt_sc(index), opt_sc(characterSpec)),
         ([code, ispec, cspec]) => (tag, index, subSpec) => new SubfieldSpec(tag, index, code, ispec, cspec, subSpec));
 
@@ -378,7 +378,7 @@ export const abbreviation: Parser<TokenType, AbbrSubfieldSpec | AbbrFieldSpec | 
 
 const specStart: Parser<TokenType, [string, IndexSpec | undefined]> = apply(seq(tok(TokenType.FIELD_TAG), opt_sc(index)), ([token, index]) => [token.text, index]);
 
-export const fullSpec: Parser<TokenType, (subSpec: SubTermSet[]) => SubfieldSpec | FieldSpec | IndicatorSpec> = apply(seq(specStart, alt_sc(subfieldSpec, indicatorSpec, fieldSpec)),
+export const fullSpec: Parser<TokenType, (subSpec: SubTermSet[][]) => SubfieldSpec | FieldSpec | IndicatorSpec> = apply(seq(specStart, alt_sc(subfieldSpec, indicatorSpec, fieldSpec)),
     ([[tag, index], alt1]) => (subSpec) => alt1(tag, index, subSpec));
 
 export const comparisonString: Parser<TokenType, ComparisonString> = apply(kright(tok(TokenType.BEGIN_COMPARISON), tok(TokenType.COMPARISON_STRING)),
@@ -396,12 +396,14 @@ export const subTermSet: Parser<TokenType, SubTermSet> =
         apply(seq(unarySubTerm, opt_sc(seq(tok(TokenType.BINARY_OPERATOR), binarySubTerm))), ([mlhs, alt]) => alt === undefined ? new UnarySubTermSet(undefined, mlhs) : new BinarySubTermSet(mlhs, binOp(alt[0].text), alt[1])),
         apply(seq(comparisonString, tok(TokenType.BINARY_OPERATOR), binarySubTerm), ([lhs, op, rhs]) => new BinarySubTermSet(lhs, binOp(op.text), rhs)));
 
-export const subSpec: Parser<TokenType, SubTermSet[]> =
+export const subOrSpec: Parser<TokenType, SubTermSet[]> =
     apply(opt_sc(
         kmid(tok(TokenType.BEGIN_SUBSPEC), list_sc(subTermSet, tok(TokenType.SUBTERM_SEPARATOR)), tok(TokenType.END_SUBSPEC))
     ), (mspec) => (mspec === undefined ? [] : mspec));
 
-export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec)));
+export const subAndSpec: Parser<TokenType, SubTermSet[][]> = rep_sc(subOrSpec);
+
+export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subAndSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec)));
 
 export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input: string) => {
     try {
@@ -501,11 +503,11 @@ export const serializeCode: (code: SubfieldCode) => string = (code) => {
     return `\$${start}-${end}`;
 };
 
-export const serializeSubSpec: (subSpec: SubTermSet[]) => string = (subSpec) => {
+export const serializeSubSpec: (subSpec: SubTermSet[][]) => string = (subSpec) => {
     if (subSpec.length === 0) {
         return '';
     }
-    return '{' + subSpec.map((t) => serializeTermSet(t)).join('|') + '}';
+    return subSpec.reduce((s0, s) => s0 + '{' + s.map((t) => serializeTermSet(t)).join('|') + '}', '');
 };
 
 export const serializeTermSet: (termSet: SubTermSet) => string = (termSet) => {
