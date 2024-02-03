@@ -66,22 +66,24 @@ test('MarcSpec: fieldSpec', () => {
 
 test('MarcSpec: subTermSet', () => {
     const parse = (input: string) => expectSingleResult(expectEOF(subTermSet.parse(newMarcSpecLexer().parse(input))));
+    const unused = new ComparisonString('unused');
 
     const s1 = parse('001');
-    assert.deepStrictEqual(s1, new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, [])));
+    assert.deepStrictEqual(s1(unused), new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, [])));
 
     const s2 = parse('?001');
-    assert.deepStrictEqual(s2, new UnarySubTermSet(UnaryOperator.EXISTS, new FieldSpec('001', undefined, undefined, [])));
+    assert.deepStrictEqual(s2(unused), new UnarySubTermSet(UnaryOperator.EXISTS, new FieldSpec('001', undefined, undefined, [])));
 });
 
 test('MarcSpec: subAndSpec', () => {
     const parse = (input: string) => expectSingleResult(expectEOF(subAndSpec.parse(newMarcSpecLexer().parse(input))));
+    const applyUnused = (s) => s.map((s0) => s0.map((s1) => s1(new ComparisonString('unused'))));
 
     const s1 = parse('{001}');
-    assert.deepStrictEqual(s1, [[new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, []))]]);
+    assert.deepStrictEqual(applyUnused(s1), [[new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, []))]]);
 
     const s2 = parse('{001|020[0]$a!=\\foo}');
-    assert.deepStrictEqual(s2, [[
+    assert.deepStrictEqual(applyUnused(s2), [[
         new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, [])),
         new BinarySubTermSet(new SubfieldSpec('020', new IndexSpec(0), new SubfieldCode('a', 'a'), undefined, undefined, []), BinaryOperator.NOT_EQUALS, new ComparisonString('foo'))
     ]]);

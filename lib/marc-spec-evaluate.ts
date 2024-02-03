@@ -1,5 +1,5 @@
-import { parseMarcSpec, MARCSpec, FieldSpec, IndicatorSpec, SubfieldSpec, IndexSpec, CharacterSpec, Range, Position } from './marc-spec';
-import { Subscriber, Field, ControlField, DataField } from './marc-parser';
+import { parseMarcSpec, MARCSpec, FieldSpec, IndicatorSpec, SubfieldSpec, AbbrFieldSpec, AbbrIndicatorSpec, AbbrSubfieldSpec, IndexSpec, CharacterSpec, Range, Position } from './marc-spec';
+import { Subscriber, ControlField, DataField } from './marc-parser';
 
 class EvalTree {
 
@@ -71,13 +71,23 @@ const charExtractor: (charSpec: CharacterSpec | undefined) => (data: string) => 
     return reverse ? rev(result) : result;
 };
 
-const filterSubspec: (subSpecNodes: Node[], data: string[][]) => string[][] = (subSpecNodes, data) => {
+type Field = ControlField | DataField;
 
+const filterSubspec: (subSpecNodes: Node[], f: Field[]) => Field[] = (subSpecNodes, f) => {
+    for (subSpec of subSpecNodes) {
+        if (subSpec instanceof UnaryNode) {
+            f = filterUnary(subSpec, f);
+        } else if (subSpec instanceof BinaryNod) {
+            f = filterBinary(subSpec, f);
+        }
+    }
+
+    return f;
 };
 
 class FieldNode implements Node, Subscriber {
 
-    private fields: (ControlField | DataField)[] = [];
+    private fields: Field[] = [];
 
     public get tagPattern() {
         return this.fieldSpec.tag;
@@ -104,14 +114,30 @@ class FieldNode implements Node, Subscriber {
     };
 
     evaluateSpec() {
-        const candidates = candidateFields(this.fields, this.fieldSpec.index);
-        const data = filterSubspec(this.subSpec, candidates.map((f: ControlField | DataField) => f instanceof ControlField
-            ? [f.data]
-            : Array.from(f.subfields.values()).reduce((a, b) => a.concat(b)).map((sf) => sf.data)));
+        const candidates0 = candidateFields(this.fields, this.fieldSpec.index);
+        const candidates1 = filterSubspec(this.subSpec, candidates0);
+
+        const data = candidates1.map((f) => f instanceof ControlField ? [f.data]
+            : Array.from(f.subfields.values()).reduce((a, b) => a.concat(b)).map((sf) => sf.data));
 
         return data.map((d) => d.map(charExtractor(this.fieldSpec.characterSpec)));
     };
 }
+
+type UnaryTermNode = FieldNode | AbbrFieldNode | IndicatorNode | AbbrIndicatorNode | SubfieldNode | AbbrSubfieldNode;
+type BinaryTermNode = FieldNode | AbbrFieldNode | IndicatorNode | AbbrIndicatorNode | SubfieldNode | AbbrSubfieldNode | CompStringNode;
+
+class EqualsNode implements Node {
+
+    constructor(
+        rhs: BinaryTermNode,
+        lhs: BinaryTermNode
+    ) { }
+
+    public get subscribers() {
+    }
+}
+
 
 const buildTree: (marcSpec: MARCSpec) => EvalTree = (marcSpec) => {
     const { spec } = marcSpec;
@@ -132,7 +158,6 @@ const buildTree: (marcSpec: MARCSpec) => EvalTree = (marcSpec) => {
 
 const buildFieldNode: (fieldSpec: FieldSpec) => Node = (fieldSpec) => {
     const { tag, index, characterSpec, subSpec } = fieldSpec;
-
 
 
 };

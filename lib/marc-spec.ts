@@ -390,20 +390,21 @@ export const unarySubTerm: Parser<TokenType, UnarySubTerm> = apply(alt_sc(fullSp
 export const binarySubTerm: Parser<TokenType, BinarySubTerm> = apply(alt_sc(fullSpec, comparisonString, abbreviation),
     (alt1) => typeof alt1 === 'function' ? alt1([]) : alt1);
 
-export const subTermSet: Parser<TokenType, SubTermSet> =
+export const subTermSet: Parser<TokenType, (outerSpec: BinarySubTerm) => SubTermSet> =
     alt(
-        apply(seq(tok(TokenType.UNARY_OPERATOR), unarySubTerm), ([op, rhs]) => new UnarySubTermSet(unOp(op.text), rhs)),
-        apply(seq(unarySubTerm, opt_sc(seq(tok(TokenType.BINARY_OPERATOR), binarySubTerm))), ([mlhs, alt]) => alt === undefined ? new UnarySubTermSet(undefined, mlhs) : new BinarySubTermSet(mlhs, binOp(alt[0].text), alt[1])),
-        apply(seq(comparisonString, tok(TokenType.BINARY_OPERATOR), binarySubTerm), ([lhs, op, rhs]) => new BinarySubTermSet(lhs, binOp(op.text), rhs)));
+        apply(seq(tok(TokenType.UNARY_OPERATOR), unarySubTerm), ([op, rhs]) => (_) => new UnarySubTermSet(unOp(op.text), rhs)),
+        apply(seq(tok(TokenType.BINARY_OPERATOR), binarySubTerm), ([op, rhs]) => (lhs) => new BinarySubTermSet(lhs, binOp(op.text), rhs)),
+        apply(seq(unarySubTerm, opt_sc(seq(tok(TokenType.BINARY_OPERATOR), binarySubTerm))), ([mlhs, alt]) => (_) => alt === undefined ? new UnarySubTermSet(undefined, mlhs) : new BinarySubTermSet(mlhs, binOp(alt[0].text), alt[1])),
+        apply(seq(comparisonString, tok(TokenType.BINARY_OPERATOR), binarySubTerm), ([lhs, op, rhs]) => (_) => new BinarySubTermSet(lhs, binOp(op.text), rhs)));
 
-export const subOrSpec: Parser<TokenType, SubTermSet[]> =
+export const subOrSpec: Parser<TokenType, ((outerSpec: BinarySubTerm) => SubTermSet)[]> =
     apply(opt_sc(
         kmid(tok(TokenType.BEGIN_SUBSPEC), list_sc(subTermSet, tok(TokenType.SUBTERM_SEPARATOR)), tok(TokenType.END_SUBSPEC))
     ), (mspec) => (mspec === undefined ? [] : mspec));
 
-export const subAndSpec: Parser<TokenType, SubTermSet[][]> = rep_sc(subOrSpec);
+export const subAndSpec: Parser<TokenType, ((outerSpec: BinarySubTerm) => SubTermSet)[][]> = rep_sc(subOrSpec);
 
-export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subAndSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec)));
+export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subAndSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec.map((s) => s.map((s0) => s0(fullSpec([])))))));
 
 export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input: string) => {
     try {
