@@ -46,7 +46,7 @@ export class DataField extends Field {
     constructor(
         tag: string,
         public readonly indicators: string,
-        public readonly subfields: Map<string, Subfield[]>
+        public readonly subfields: Map<string, Subfield[]>,
     ) {
         super(tag);
     }
@@ -110,6 +110,15 @@ export const extractMarcRecordMeta: (b: Uint8Array) => MarcRecordMeta = (b) => {
 export const extractFields: (b: Uint8Array, subscribers: Subscriber[]) => void = (b, subscribers) => {
     const meta = extractMarcRecordMeta(b);
     const marc_directory_entry_length = 3 + meta.length_of_length + meta.length_of_start_character_position;
+
+    const ldr_matching = subscribers.filter((s) => tagMatcher('ldr', s.tagPattern));
+    const LDR_matching = subscribers.filter((s) => tagMatcher('LDR', s.tagPattern));
+
+    for (const matching of [ldr_matching, LDR_matching]) {
+        for (const m of matching) {
+            m.receiveControlField(new ControlField('LDR', utf8Decoder.decode(b.subarray(0, 24))));
+        }
+    }
 
     for (let i = 24; b[i] !== 0x1E && i < meta.length && i < b.length - marc_directory_entry_length; i += marc_directory_entry_length) {
         const tag = byteArrayToTag(b, i);

@@ -58,7 +58,7 @@ export class AbbrSpec {
     }
 }
 
-type SubTermSet = BinarySubTermSet | UnarySubTermSet;
+export type SubTermSet = BinarySubTermSet | UnarySubTermSet;
 
 export class FieldSpec extends ItemSpec {
     constructor(
@@ -131,6 +131,19 @@ export class AbbrIndicatorSpec extends AbbrSpec {
     }
 }
 
+const toAbbr: (spec: SubfieldSpec | FieldSpec | IndicatorSpec) => AbbrFieldSpec | AbbrSubfieldSpec | AbbrIndicatorSpec = (spec) => {
+    if (spec instanceof FieldSpec) {
+        const { index, characterSpec } = spec;
+        return new AbbrFieldSpec(index, characterSpec);
+    }
+    if (spec instanceof SubfieldSpec) {
+        const { index, code, subindex, characterSpec } = spec;
+        return new AbbrSubfieldSpec(index, code, subindex, characterSpec);
+    }
+    const { index, indicator } = spec;
+    return new AbbrIndicatorSpec(indicator, index);
+}
+
 const unescapeSpaceRe: RegExp = /\\s/g;
 const unescapeCompStringRe: RegExp = /\\([\$\{\}!=~\?\|\}\\])/g;
 const escapeCompStringRe: RegExp = /([\$\{\}!=~\?\|\}\\])/g;
@@ -145,9 +158,9 @@ export class ComparisonString {
     }
 }
 
-type BinarySubTerm = FieldSpec | SubfieldSpec | IndicatorSpec | AbbrFieldSpec | AbbrSubfieldSpec | AbbrIndicatorSpec | ComparisonString;
+export type BinarySubTerm = FieldSpec | SubfieldSpec | IndicatorSpec | AbbrFieldSpec | AbbrSubfieldSpec | AbbrIndicatorSpec | ComparisonString;
 
-type UnarySubTerm = FieldSpec | SubfieldSpec | IndicatorSpec | AbbrFieldSpec | AbbrSubfieldSpec | AbbrIndicatorSpec;
+export type UnarySubTerm = FieldSpec | SubfieldSpec | IndicatorSpec | AbbrFieldSpec | AbbrSubfieldSpec | AbbrIndicatorSpec;
 
 export enum BinaryOperator {
     EQUALS,
@@ -236,7 +249,7 @@ const _l: (regexp: string, tokentype: TokenType, keep: boolean) => (nextContext:
 
 const integer = _l('[0-9]+', TokenType.INTEGER, true);
 
-const comparison_string = _l('(?:["#%-<>@-Z^-z]|\\\\[!-~])+', TokenType.COMPARISON_STRING, true);
+const comparison_string = _l('(?:["#%-<>@-Z^-z]|[^\\u0000-\\u007F]|\\\\[!-~\\|=])+', TokenType.COMPARISON_STRING, true);
 const begin_comparison = _l('\\\\', TokenType.BEGIN_COMPARISON, true);
 const positive_digit = _l('[1-9]', TokenType.POSITIVE_DIGIT, true);
 const hash = _l('#', TokenType.HASH, true);
@@ -290,7 +303,8 @@ const position2_context: ctx = [Context.POSITION2, new AdvancedRegexpLexerContex
         end_index(Context.TOP),
         begin_subspec(Context.TOP),
         end_subspec(Context.TOP),
-        range_mark(Context.POSITION1)
+        range_mark(Context.POSITION1),
+        subterm_separator(Context.TOP),
     ], 'failed-lexing-position-context', 'm')
 ];
 
@@ -404,7 +418,7 @@ export const subOrSpec: Parser<TokenType, ((outerSpec: BinarySubTerm) => SubTerm
 
 export const subAndSpec: Parser<TokenType, ((outerSpec: BinarySubTerm) => SubTermSet)[][]> = rep_sc(subOrSpec);
 
-export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subAndSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec.map((s) => s.map((s0) => s0(fullSpec([])))))));
+export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subAndSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec.map((s) => s.map((s0) => s0(toAbbr(fullSpec([]))))))));
 
 export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input: string) => {
     try {

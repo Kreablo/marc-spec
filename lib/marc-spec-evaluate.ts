@@ -1,21 +1,27 @@
-import { parseMarcSpec, MARCSpec, FieldSpec, IndicatorSpec, SubfieldSpec, AbbrFieldSpec, AbbrIndicatorSpec, AbbrSubfieldSpec, IndexSpec, CharacterSpec, Range, Position } from './marc-spec';
+import { parseMarcSpec, MARCSpec, FieldSpec, IndicatorSpec, SubfieldSpec, AbbrFieldSpec, AbbrIndicatorSpec, AbbrSubfieldSpec, IndexSpec, CharacterSpec, Range, Position, ComparisonString, SubfieldCode, SubTermSet, BinarySubTermSet, BinaryOperator, UnaryOperator, BinarySubTerm } from './marc-spec';
 import { Subscriber, ControlField, DataField } from './marc-parser';
 
-class EvalTree {
-
-    constructor(
-        private readonly root: Node<ControlField | DataField>,
-        public readonly subscribers: Subscriber[]
-    ) { }
+interface Node {
+    evaluate: string[][];
 }
 
-interface Node {
+export class EvalTree implements Node {
+    constructor(
+        private readonly root: Node,
+        public readonly subscribers: RSubscriber[]
+    ) { }
 
-    subscribers: Subscriber[];
+    public get evaluate() {
+        return this.root.evaluate;
+    }
+}
 
+interface Term {
+    value: (outerFields: Field[], outerField: Field) => Set<string>;
+}
+
+export interface RSubscriber extends Subscriber {
     reset(): void;
-
-    evaluateSpec(): string[][];
 }
 
 const limitRange: (rangeOrPosition: Range | Position, maxIndex: number) => [number, number, boolean] = (rangeOrPosition, maxIndex) => {
@@ -29,10 +35,10 @@ const limitRange: (rangeOrPosition: Range | Position, maxIndex: number) => [numb
         start0 = rangeOrPosition;
         end0 = rangeOrPosition;
     }
-    start0 = start0 === '#' ? maxIndex : 0;
-    end0 = end0 === '#' ? maxIndex : 0;
-    start0 = Math.min(Math.max(0, start0), maxIndex);
-    end0 = Math.min(Math.max(start0, 0), maxIndex);
+    start0 = start0 === '#' ? maxIndex : start0;
+    end0 = end0 === '#' ? maxIndex : end0;
+    start0 = Math.max(0, start0);
+    end0 = Math.min(Math.max(end0, 0), maxIndex);
     const reverse = start0 > end0;
 
     return [start0, end0, reverse];
@@ -46,7 +52,11 @@ const candidateFields: (fields: Field[], index: IndexSpec | undefined) => Field[
 
     const [start, end, reverse] = limitRange(item, fields.length - 1);
 
-    const result = fields.slice(start, end);
+    if (start >= fields.length) {
+        return [];
+    }
+
+    const result = fields.slice(start, end + 1);
     return reverse ? result.reverse() : result;
 };
 
@@ -66,105 +76,555 @@ const charExtractor: (charSpec: CharacterSpec | undefined) => (data: string) => 
 
     const [start, end, reverse] = limitRange(item, data.length - 1);
 
+    if (start >= data.length) {
+        return '';
+    }
     const result = data.substring(start, end + 1);
 
     return reverse ? rev(result) : result;
 };
 
+const fieldData: (fields: Field[]) => string[][] = (fields) =>
+    fields.map((f) => f instanceof ControlField
+        ? [f.data]
+        : Array.from(f.subfields.values()).reduce((a, b) => a.concat(b)).map((sf) => sf.data));
+
+const subfieldData: (field: DataField, code: SubfieldCode) => string[] = (field, code) => {
+    const { start, end } = code;
+
+    if (start === end) {
+        return field.subfields.has(start) ? field.subfields.get(start).map((sf) => sf.data) : [];
+    }
+
+    const startcp = start.codePointAt(0);
+    const endcp = end.codePointAt(0);
+    const result = [];
+    for (const c of field.subfields.keys()) {
+        const cp = c.charCodeAt(0);
+        if (startcp <= cp && cp <= endcp) {
+            if (field.subfields.has(c)) {
+                const sfs = field.subfields.get(c);
+                for (const sf of sfs) {
+                    result.push(sf.data);
+                }
+            }
+        }
+    }
+    return result;
+
+}
+
+const fieldDataSet: (data: string[][]) => Set<string> = (data) => {
+    const result = new Set<string>();
+    for (const vs of data) {
+        for (const v of vs) {
+            result.add(v);
+        }
+    }
+    return result;
+}
+
+const fieldDataSetExtract: (data: string[][], charExtractor: (data: string) => string) => Set<string> = (data, charExtractor) => {
+    const result = new Set<string>();
+    for (const vs of data) {
+        for (const v of vs) {
+            result.add(charExtractor(v));
+        }
+    }
+    return result;
+}
+
 type Field = ControlField | DataField;
 
-const filterSubspec: (subSpecNodes: Node[], f: Field[]) => Field[] = (subSpecNodes, f) => {
-    for (subSpec of subSpecNodes) {
-        if (subSpec instanceof UnaryNode) {
-            f = filterUnary(subSpec, f);
-        } else if (subSpec instanceof BinaryNod) {
-            f = filterBinary(subSpec, f);
+interface Operator {
+    match: (fieldGroup: Field[], outerField: Field) => boolean;
+}
+
+abstract class AbstractBinaryOperator implements Operator {
+    constructor(
+        private readonly lhs: Term,
+        private readonly rhs: Term
+    ) { }
+
+    protected abstract _match: (lv: Set<string>, rv: Set<string>) => boolean;
+
+    public match(fieldGroup: Field[], outerField: Field) {
+        const lv = this.lhs.value(fieldGroup, outerField);
+        const rv = this.rhs.value(fieldGroup, outerField);
+
+        console.log('matching lv: ' + lv.size + ' rv: ' + rv.size);
+
+        return this._match(lv, rv);
+    }
+}
+
+class EqualsOperator extends AbstractBinaryOperator {
+    protected _match = (lv: Set<string>, rv: Set<string>) => {
+        const [a, b] = lv.size < rv.size ? [lv, rv] : [rv, lv];
+
+        for (const v of a.values()) {
+            console.log('left hand value: "' + v + '" a: ' + JSON.stringify(Array.from(a.values())) + ' b: ' + JSON.stringify(Array.from(b.values())));
+            if (b.has(v)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+class NotEqualsOperator extends AbstractBinaryOperator {
+    protected _match = (lv: Set<string>, rv: Set<string>) => {
+        const [a, b] = lv.size < rv.size ? [lv, rv] : [rv, lv];
+
+        for (const v of a) {
+            if (b.has(v)) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+class IncludesOperator extends AbstractBinaryOperator {
+    protected _match = (lv: Set<string>, rv: Set<string>) => {
+        for (const v0 of lv) {
+            for (const v1 of rv) {
+                if (v0.indexOf(v1) >= 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+class DoesNotIncludeOperator extends AbstractBinaryOperator {
+    protected _match = (lv: Set<string>, rv: Set<string>) => {
+        for (const v0 of lv) {
+            for (const v1 of rv) {
+                if (v0.indexOf(v1) >= 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+}
+
+abstract class AbstractUnaryOperator implements Operator {
+    constructor(
+        private readonly rhs: Term
+    ) { }
+
+    protected abstract _match: (rv: Set<string>) => boolean;
+
+    public match(fieldGroup: Field[], outerField: Field) {
+        const rv = this.rhs.value(fieldGroup, outerField);
+
+        return this._match(rv);
+    }
+}
+
+class ExistsOperator extends AbstractUnaryOperator {
+    protected _match = (rv: Set<string>) => {
+        return rv.size > 0
+    }
+}
+
+class DoesNotExistOperator extends AbstractUnaryOperator {
+    protected _match = (rv: Set<string>) => {
+        return rv.size == 0
+    }
+}
+
+const filterSubspec: (operators: Operator[][], fields: Field[]) => Field[] = (operators, fields) => {
+    const result = [];
+    for (const f of fields) {
+        console.log('filtering field: ' + f.tag);
+        let accept = true;
+        for (const conj of operators) {
+            accept = false;
+            console.log('filtering conjunction');
+            for (const disj of conj) {
+                console.log('filtering disjunktion');
+                const v = disj.match(fields, f);
+                console.log('v: ' + v);
+                if (v) {
+                    accept = true;
+                    break;
+                }
+            }
+            if (!accept) {
+                break;
+            }
+        }
+        console.log("accept is: " + accept);
+        if (accept) {
+            result.push(f);
         }
     }
 
-    return f;
+    return result;
 };
 
-class FieldNode implements Node, Subscriber {
+class FieldNode implements Node, RSubscriber, Term {
 
     private fields: Field[] = [];
+
+    private readonly fieldGroups: Map<string, Field[]> = new Map();
+
+    private readonly _charExtractor: (data: string) => string;
 
     public get tagPattern() {
         return this.fieldSpec.tag;
     }
 
     constructor(
-        public subscribers: Subscriber[],
         private readonly fieldSpec: FieldSpec,
-        private readonly subSpec: Node[]
+        private readonly operators: Operator[][]
     ) {
-        this.subscribers.push(this);
+        this._charExtractor = charExtractor(this.fieldSpec.characterSpec);
     }
 
     reset() {
         this.fields = [];
+        this.fieldGroups.clear();
     };
 
     receiveControlField(field: ControlField) {
         this.fields.push(field);
+        this.addGroup(field);
     };
+
+    private addGroup(field: Field) {
+        const t = field.tag;
+        const fs = this.fieldGroups.get(t);
+        if (fs === undefined) {
+            this.fieldGroups.set(t, [field]);
+        } else {
+            fs.push(field);
+        }
+    }
 
     receiveDataField(field: DataField) {
         this.fields.push(field);
     };
 
-    evaluateSpec() {
+    public value() {
+        const data = this.evaluate;
+
+        const result = new Set<string>();
+        for (const d0 of data) {
+            for (const d of d0) {
+                result.add(d);
+            }
+        }
+        return result;
+    }
+
+    public get evaluate() {
         const candidates0 = candidateFields(this.fields, this.fieldSpec.index);
-        const candidates1 = filterSubspec(this.subSpec, candidates0);
+        const candidates1 = filterSubspec(this.operators, candidates0);
 
-        const data = candidates1.map((f) => f instanceof ControlField ? [f.data]
-            : Array.from(f.subfields.values()).reduce((a, b) => a.concat(b)).map((sf) => sf.data));
+        const data = fieldData(candidates1);
 
-        return data.map((d) => d.map(charExtractor(this.fieldSpec.characterSpec)));
+        return data.map((d) => d.map(this._charExtractor));
     };
 }
+class SubfieldNode implements Node, Term, RSubscriber {
+    private fields: Field[] = [];
 
-type UnaryTermNode = FieldNode | AbbrFieldNode | IndicatorNode | AbbrIndicatorNode | SubfieldNode | AbbrSubfieldNode;
-type BinaryTermNode = FieldNode | AbbrFieldNode | IndicatorNode | AbbrIndicatorNode | SubfieldNode | AbbrSubfieldNode | CompStringNode;
+    private readonly fieldGroups: Map<string, Field[]> = new Map();
 
-class EqualsNode implements Node {
+    private readonly _charExtractor: (data: string) => string;
 
     constructor(
-        rhs: BinaryTermNode,
-        lhs: BinaryTermNode
+        public readonly spec: SubfieldSpec,
+        private readonly operators: Operator[][]
+    ) {
+        this._charExtractor = charExtractor(this.spec.characterSpec);
+    }
+
+    public get tagPattern() {
+        return this.spec.tag;
+    }
+    public value() {
+        return fieldDataSetExtract(this.evaluate, this._charExtractor);
+    }
+    public get evaluate() {
+        const candidates0 = candidateFields(this.fields, this.spec.index);
+        const candidates1 = filterSubspec(this.operators, candidates0);
+
+        const data = [];
+        for (const f of candidates1) {
+            if (f instanceof DataField) {
+                data.push(subfieldData(f, this.spec.code));
+            }
+        }
+
+        return data.map((d) => d.map(this._charExtractor));
+    }
+    reset() {
+        this.fields = [];
+        this.fieldGroups.clear();
+    };
+
+    receiveControlField(field: ControlField) {
+        this.fields.push(field);
+        this.addGroup(field);
+    };
+
+    private addGroup(field: Field) {
+        const t = field.tag;
+        const fs = this.fieldGroups.get(t);
+        if (fs === undefined) {
+            this.fieldGroups.set(t, [field]);
+        } else {
+            fs.push(field);
+        }
+    }
+
+    receiveDataField(field: DataField) {
+        this.fields.push(field);
+    };
+
+}
+class IndicatorNode implements Node, Term, RSubscriber {
+    private fields: Field[] = [];
+
+    private readonly fieldGroups: Map<string, Field[]> = new Map();
+
+    constructor(
+        public readonly spec: IndicatorSpec,
+        private readonly operators: Operator[][]
+    ) { }
+    public value() {
+        console.log("indicator value");
+        return fieldDataSet(this.evaluate);
+    }
+    public get tagPattern() {
+        return this.spec.tag;
+    }
+    public get evaluate() {
+        const candidates0 = candidateFields(this.fields, this.spec.index);
+        const candidates1 = filterSubspec(this.operators, candidates0);
+
+        const data = [];
+        for (const f of candidates1) {
+            if (f instanceof DataField) {
+                console.log("referencing indicators '" + f.indicators + "' " + JSON.stringify(this.spec.indicator));
+                data.push([f.indicators.charAt(this.spec.indicator - 1)]);
+            }
+        }
+        return data;
+    }
+    reset() {
+        this.fields = [];
+        this.fieldGroups.clear();
+    };
+
+    receiveControlField(field: ControlField) {
+        this.fields.push(field);
+        this.addGroup(field);
+    };
+
+    private addGroup(field: Field) {
+        const t = field.tag;
+        const fs = this.fieldGroups.get(t);
+        if (fs === undefined) {
+            this.fieldGroups.set(t, [field]);
+        } else {
+            fs.push(field);
+        }
+    }
+
+    receiveDataField(field: DataField) {
+        this.fields.push(field);
+    };
+
+}
+class CompStringNode implements Term {
+
+    private readonly _value: Set<string> = new Set<string>();
+
+    public value() {
+        return this._value;
+    }
+
+    constructor(
+        compString: ComparisonString
+    ) {
+        const { theString } = compString;
+        console.log('create com string theString: ' + theString);
+        this._value.add(theString);
+        this._value.add('foo');
+        console.log('value: ' + JSON.stringify(Array.from(this._value.values())) + ' has the string: ' + this._value.has(theString) + ' has foo: ' + this._value.has('foo'));
+    }
+}
+
+class AbbrFieldNode implements Term {
+
+    private readonly _charExtractor: (data: string) => string;
+
+    constructor(
+        private readonly spec: AbbrFieldSpec,
+    ) {
+        this._charExtractor = charExtractor(this.spec.characterSpec);
+    }
+
+    public value(fieldGroup: Field[], outerField: Field) {
+        const data = fieldData(
+            this.spec.index !== undefined
+                ? candidateFields(fieldGroup, this.spec.index)
+                : [outerField]
+        );
+
+        return fieldDataSetExtract(data, this._charExtractor);
+    }
+}
+
+class AbbrIndicatorNode implements Term {
+    constructor(
+        private readonly spec: AbbrIndicatorSpec
     ) { }
 
-    public get subscribers() {
+    public value(fieldGroup: Field[], outerField: Field) {
+        console.log("abbr indicator value");
+        const result = new Set<string>();
+        if (this.spec.index !== undefined) {
+            for (const f of fieldGroup) {
+                if (f instanceof DataField) {
+                    result.add(f.indicators.charAt(this.spec.indicator - 1));
+                }
+            }
+        } else if (outerField instanceof DataField) {
+            console.log("matching outer field indicators '" + outerField.indicators + "' " + JSON.stringify(this.spec));
+            result.add(outerField.indicators.charAt(this.spec.indicator - 1));
+        }
+        return result;
     }
 }
 
+class AbbrSubfieldNode implements Term {
 
-const buildTree: (marcSpec: MARCSpec) => EvalTree = (marcSpec) => {
+    private readonly _charExtractor: (data: string) => string;
+
+    constructor(
+        private readonly spec: AbbrSubfieldSpec,
+    ) {
+        this._charExtractor = charExtractor(this.spec.characterSpec);
+    }
+
+    public value(fieldGroup: Field[], outerField: Field) {
+        const result = new Set<string>();
+        if (this.spec.index !== undefined) {
+            for (const f of fieldGroup) {
+                if (f instanceof DataField) {
+                    const data = subfieldData(f, this.spec.code);
+                    for (const d of data) {
+                        result.add(this._charExtractor(d));
+                    }
+                }
+            }
+        } else {
+            if (outerField instanceof DataField) {
+                const data = subfieldData(outerField, this.spec.code);
+                for (const d of data) {
+                    result.add(this._charExtractor(d));
+                }
+            }
+        }
+        return result;
+    }
+}
+
+export const buildTree: (marcSpec: MARCSpec) => EvalTree = (marcSpec) => {
     const { spec } = marcSpec;
 
-    let root;
+    const subscribers = [];
 
+    const root = buildNode(spec, subscribers);
+
+    return new EvalTree(root, subscribers);
+};
+
+const buildNode: (spec: FieldSpec | IndicatorSpec | SubfieldSpec, subscribers: RSubscriber[]) => FieldNode | IndicatorNode | SubfieldNode = (spec, subscribers) => {
     if (spec instanceof FieldSpec) {
-        root = buildFieldNode(spec);
+        return buildFieldNode(spec, subscribers);
     } else if (spec instanceof IndicatorSpec) {
-        root = buildIndicatorNode(spec);
+        return buildIndicatorNode(spec, subscribers);
     } else {
-        root = buildSubfieldNode(spec);
+        return buildSubfieldNode(spec, subscribers);
     }
-
-    return new EvalTree(root, root.subscribers);
-
-};
-
-const buildFieldNode: (fieldSpec: FieldSpec) => Node = (fieldSpec) => {
-    const { tag, index, characterSpec, subSpec } = fieldSpec;
-
-
-};
-
-const buildIndicatorNode: (indicatorSpec: IndicatorSpec) => Node = (indicatorSpec) => {
 }
 
-const buildSubfieldNode: (subfieldSpec: SubfieldSpec) => Node = (subfieldSpec) => {
+const buildTerm: (spec: BinarySubTerm, subscribers: RSubscriber[]) => Term = (spec, subscribers) => {
+    if (spec instanceof AbbrFieldSpec) {
+        return new AbbrFieldNode(spec);
+    } else if (spec instanceof AbbrIndicatorSpec) {
+        return new AbbrIndicatorNode(spec);
+    } else if (spec instanceof AbbrSubfieldSpec) {
+        return new AbbrSubfieldNode(spec);
+    } else if (spec instanceof ComparisonString) {
+        return new CompStringNode(spec);
+    } else {
+        return buildNode(spec, subscribers);
+    }
+};
+
+const buildFieldNode: (fieldSpec: FieldSpec, subscribers: RSubscriber[]) => FieldNode = (fieldSpec, subscribers) => {
+    const { subSpec } = fieldSpec;
+
+    const operators = subSpec.map((conj) => conj.map((disj) => buildOperator(disj, subscribers)));
+
+    const node = new FieldNode(fieldSpec, operators);
+    subscribers.push(node);
+    return node;
+};
+
+const buildIndicatorNode: (indicatorSpec: IndicatorSpec, subscribers: RSubscriber[]) => IndicatorNode = (indicatorSpec, subscribers) => {
+    const { subSpec } = indicatorSpec;
+
+    const operators = subSpec.map((conj) => conj.map((disj) => buildOperator(disj, subscribers)));
+    const node = new IndicatorNode(indicatorSpec, operators);
+    subscribers.push(node);
+    return node;
 }
+
+const buildSubfieldNode: (subfieldSpec: SubfieldSpec, subscribers: RSubscriber[]) => SubfieldNode = (subfieldSpec, subscribers) => {
+    const { subSpec } = subfieldSpec;
+
+    const operators = subSpec.map((conj) => conj.map((disj) => buildOperator(disj, subscribers)));
+    const node = new SubfieldNode(subfieldSpec, operators);
+    subscribers.push(node);
+    return node;
+}
+
+const buildOperator: (spec: SubTermSet, subscribers: RSubscriber[]) => Operator = (spec, subscribers) => {
+    if (spec instanceof BinarySubTermSet) {
+        const { leftHand, operator, rightHand } = spec;
+        const lhs = buildTerm(leftHand, subscribers);
+        const rhs = buildTerm(rightHand, subscribers);
+        switch (operator) {
+            case BinaryOperator.EQUALS:
+                return new EqualsOperator(lhs, rhs);
+            case BinaryOperator.NOT_EQUALS:
+                return new NotEqualsOperator(lhs, rhs);
+            case BinaryOperator.INCLUDES:
+                return new IncludesOperator(lhs, rhs);
+            case BinaryOperator.DOES_NOT_INCLUDE:
+                return new DoesNotIncludeOperator(lhs, rhs);
+        }
+    } else {
+        const { operator, rightHand } = spec;
+        const rhs = buildTerm(rightHand, subscribers);
+        switch (operator) {
+            case UnaryOperator.EXISTS:
+                return new ExistsOperator(rhs);
+            case UnaryOperator.DOES_NOT_EXIST:
+                return new DoesNotExistOperator(rhs);
+        }
+    }
+}
+
 
