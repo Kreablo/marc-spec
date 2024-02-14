@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { expectSingleResult, expectEOF } from 'typescript-parsec';
-import { newMarcSpecLexer, subTermSet, fullSpec, characterSpec, IndexSpec, CharacterSpec, FieldSpec, TokenType, SubfieldCode, SubfieldSpec, IndicatorSpec, subAndSpec, ComparisonString, MARCSpec, marcSpec, parseMarcSpec, serializeMarcSpec, BinaryOperator, BinarySubTermSet, UnaryOperator, UnarySubTermSet, AbbrFieldSpec } from '../lib/marc-spec';
+import { newMarcSpecLexer, subTermSet, fullSpec, characterSpec, IndexSpec, CharacterSpec, FieldSpec, TokenType, SubfieldCode, SubfieldSpec, IndicatorSpec, subAndSpec, ComparisonString, MARCSpec, marcSpec, parseMarcSpec, serializeMarcSpec, BinaryOperator, BinarySubTermSet, UnaryOperator, UnarySubTermSet, AbbrFieldSpec, AbbrSubfieldSpec } from '../lib/marc-spec';
 
 
 test('MarcSpec: character_Spec', () => {
@@ -108,6 +108,19 @@ test('MarcSpec: parseMarcSpec', () => {
 
     assert.strictEqual(result.message, "failed-lexing-top-context");
     assert.deepStrictEqual(result.pos, { index: 3, columnBegin: 4, columnEnd: 4, rowBegin: 1, rowEnd: 1 });
+
+    const result0 = parseMarcSpec('5..{$a=[1]$a[0]}');
+    assert.ok(result0 instanceof MARCSpec);
+    assert.deepStrictEqual(result0, new MARCSpec(new FieldSpec('5..', undefined, undefined, [
+        [
+            new BinarySubTermSet(
+                new AbbrSubfieldSpec(undefined, new SubfieldCode("a", "a"), undefined, undefined),
+                BinaryOperator.EQUALS,
+                new AbbrSubfieldSpec(new IndexSpec(1), new SubfieldCode("a", "a"), new IndexSpec(0), undefined)
+            )
+        ]
+    ])));
+
 });
 
 test('MarcSpec: serializeMarcSpec', () => {

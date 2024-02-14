@@ -1,5 +1,5 @@
 import { apply, kright, kmid, alt_sc, alt, opt_sc, list_sc, rep_sc, tok, seq, Token, Parser, expectEOF, ParseError } from 'typescript-parsec';
-import { AdvancedRegexpLexer, AdvancedRegexpLexerContext } from './advanced-regexp-lexer';
+import { KLexer, KLexerContext } from '@kreablo/k-lexer';
 
 export enum TokenType {
     COMPARISON_STRING,
@@ -231,7 +231,7 @@ export class BinarySubTermSet {
 
 export class UnarySubTermSet {
     constructor(
-        public readonly operator: UnaryOperator,
+        public readonly operator: UnaryOperator | undefined,
         public readonly rightHand: UnarySubTerm
     ) { }
 }
@@ -278,9 +278,9 @@ export enum Context {
     TOP
 };
 
-type ctx = [Context, AdvancedRegexpLexerContext<TokenType>];
+type ctx = [Context, KLexerContext<TokenType>];
 
-const position1_context: ctx = [Context.POSITION1, new AdvancedRegexpLexerContext(
+const position1_context: ctx = [Context.POSITION1, new KLexerContext(
     [
         zero(Context.POSITION2),
         positive_digit(Context.POSITION2),
@@ -294,7 +294,7 @@ const position1_context: ctx = [Context.POSITION1, new AdvancedRegexpLexerContex
     ], 'failed-lexing-position-context', 'm')
 ];
 
-const position2_context: ctx = [Context.POSITION2, new AdvancedRegexpLexerContext(
+const position2_context: ctx = [Context.POSITION2, new KLexerContext(
     [
         integer(Context.POSITION2),
         binary_operator(Context.TOP),
@@ -308,25 +308,25 @@ const position2_context: ctx = [Context.POSITION2, new AdvancedRegexpLexerContex
     ], 'failed-lexing-position-context', 'm')
 ];
 
-const subfield_context: ctx = [Context.SUBFIELD, new AdvancedRegexpLexerContext(
+const subfield_context: ctx = [Context.SUBFIELD, new KLexerContext(
     [
         subfield_char(Context.TOP)
     ], 'failed-lexing-subfield-char', 'm')
 ];
 
-const comparison_string_context: ctx = [Context.COMPARISON_STRING, new AdvancedRegexpLexerContext(
+const comparison_string_context: ctx = [Context.COMPARISON_STRING, new KLexerContext(
     [
         comparison_string(Context.TOP)
     ], 'failed-lexing-comparison-string', 'm')
 ];
 
-const indicator_context: ctx = [Context.INDICATOR, new AdvancedRegexpLexerContext(
+const indicator_context: ctx = [Context.INDICATOR, new KLexerContext(
     [
         indicator(Context.TOP)
     ], 'failed-lexing-indicator', 'm')
 ];
 
-const top_context: ctx = [Context.TOP, new AdvancedRegexpLexerContext(
+const top_context: ctx = [Context.TOP, new KLexerContext(
     [
         field_tag(Context.TOP),
         indicator_marker(Context.INDICATOR),
@@ -343,7 +343,7 @@ const top_context: ctx = [Context.TOP, new AdvancedRegexpLexerContext(
     ], 'failed-lexing-top-context', 'm')
 ];
 
-export const newMarcSpecLexer = () => new AdvancedRegexpLexer<TokenType>([
+export const newMarcSpecLexer = () => new KLexer<TokenType>([
     top_context, subfield_context, position1_context, position2_context, comparison_string_context, indicator_context
 ]);
 

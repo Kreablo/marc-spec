@@ -1,4 +1,4 @@
-import { parseMarcSpec, MARCSpec, FieldSpec, IndicatorSpec, SubfieldSpec, AbbrFieldSpec, AbbrIndicatorSpec, AbbrSubfieldSpec, IndexSpec, CharacterSpec, Range, Position, ComparisonString, SubfieldCode, SubTermSet, BinarySubTermSet, BinaryOperator, UnaryOperator, BinarySubTerm } from './marc-spec';
+import { MARCSpec, FieldSpec, IndicatorSpec, SubfieldSpec, AbbrFieldSpec, AbbrIndicatorSpec, AbbrSubfieldSpec, IndexSpec, CharacterSpec, Range, Position, ComparisonString, SubfieldCode, SubTermSet, BinarySubTermSet, BinaryOperator, UnaryOperator, BinarySubTerm } from './marc-spec';
 import { Subscriber, ControlField, DataField } from './marc-parser';
 
 interface Node {
@@ -44,7 +44,10 @@ const limitRange: (rangeOrPosition: Range | Position, maxIndex: number) => [numb
     return [start0, end0, reverse];
 };
 
-const candidateFields: (fields: Field[], index: IndexSpec | undefined) => Field[] = (fields, index) => {
+const candidateFields: (fields: Field[] | undefined, index: IndexSpec | undefined) => Field[] = (fields, index) => {
+    if (fields === undefined) {
+        return [];
+    }
     if (index === undefined) {
         return fields;
     }
@@ -134,6 +137,23 @@ const fieldDataSetExtract: (data: string[][], charExtractor: (data: string) => s
     return result;
 }
 
+const groupFields: (fields: Field[]) => Map<String, Field[]> = (fields) => {
+    const result = new Map();
+    const add: (f: Field) => void = (f) => {
+        if (!result.has(f.tag)) {
+            result.set(f.tag, [f]);
+        } else {
+            result.get(f.tag).push(f);
+        }
+    };
+
+    for (const f of fields) {
+        add(f);
+    }
+
+    return result;
+};
+
 type Field = ControlField | DataField;
 
 interface Operator {
@@ -152,8 +172,6 @@ abstract class AbstractBinaryOperator implements Operator {
         const lv = this.lhs.value(fieldGroup, outerField);
         const rv = this.rhs.value(fieldGroup, outerField);
 
-        console.log('matching lv: ' + lv.size + ' rv: ' + rv.size);
-
         return this._match(lv, rv);
     }
 }
@@ -163,7 +181,6 @@ class EqualsOperator extends AbstractBinaryOperator {
         const [a, b] = lv.size < rv.size ? [lv, rv] : [rv, lv];
 
         for (const v of a.values()) {
-            console.log('left hand value: "' + v + '" a: ' + JSON.stringify(Array.from(a.values())) + ' b: ' + JSON.stringify(Array.from(b.values())));
             if (b.has(v)) {
                 return true;
             }
@@ -237,18 +254,14 @@ class DoesNotExistOperator extends AbstractUnaryOperator {
     }
 }
 
-const filterSubspec: (operators: Operator[][], fields: Field[]) => Field[] = (operators, fields) => {
+const filterSubspec: (operators: Operator[][], fields: Field[], groups: Map<string, Field[]>) => Field[] = (operators, fields, groups) => {
     const result = [];
     for (const f of fields) {
-        console.log('filtering field: ' + f.tag);
         let accept = true;
         for (const conj of operators) {
             accept = false;
-            console.log('filtering conjunction');
             for (const disj of conj) {
-                console.log('filtering disjunktion');
-                const v = disj.match(fields, f);
-                console.log('v: ' + v);
+                const v = disj.match(groups.get(f.tag), f);
                 if (v) {
                     accept = true;
                     break;
@@ -258,7 +271,6 @@ const filterSubspec: (operators: Operator[][], fields: Field[]) => Field[] = (op
                 break;
             }
         }
-        console.log("accept is: " + accept);
         if (accept) {
             result.push(f);
         }
@@ -266,6 +278,17 @@ const filterSubspec: (operators: Operator[][], fields: Field[]) => Field[] = (op
 
     return result;
 };
+
+const addGroup: (field: Field, fieldGroups: Map<string, Field[]>) => void = (field, fieldGroups) => {
+    const t = field.tag;
+    const fs = fieldGroups.get(t);
+    if (fs === undefined) {
+        fieldGroups.set(t, [field]);
+    } else {
+        fs.push(field);
+    }
+}
+
 
 class FieldNode implements Node, RSubscriber, Term {
 
@@ -293,21 +316,12 @@ class FieldNode implements Node, RSubscriber, Term {
 
     receiveControlField(field: ControlField) {
         this.fields.push(field);
-        this.addGroup(field);
+        addGroup(field, this.fieldGroups);
     };
-
-    private addGroup(field: Field) {
-        const t = field.tag;
-        const fs = this.fieldGroups.get(t);
-        if (fs === undefined) {
-            this.fieldGroups.set(t, [field]);
-        } else {
-            fs.push(field);
-        }
-    }
 
     receiveDataField(field: DataField) {
         this.fields.push(field);
+        addGroup(field, this.fieldGroups);
     };
 
     public value() {
@@ -324,7 +338,8 @@ class FieldNode implements Node, RSubscriber, Term {
 
     public get evaluate() {
         const candidates0 = candidateFields(this.fields, this.fieldSpec.index);
-        const candidates1 = filterSubspec(this.operators, candidates0);
+
+        const candidates1 = filterSubspec(this.operators, candidates0, this.fieldGroups);
 
         const data = fieldData(candidates1);
 
@@ -353,7 +368,9 @@ class SubfieldNode implements Node, Term, RSubscriber {
     }
     public get evaluate() {
         const candidates0 = candidateFields(this.fields, this.spec.index);
-        const candidates1 = filterSubspec(this.operators, candidates0);
+        const groups = groupFields(candidates0);
+
+        const candidates1 = Array.from(groups.values()).map((cs) => filterSubspec(this.operators, cs, this.fieldGroups)).reduce((a, b) => a.concat(b), []);
 
         const data = [];
         for (const f of candidates1) {
@@ -371,21 +388,12 @@ class SubfieldNode implements Node, Term, RSubscriber {
 
     receiveControlField(field: ControlField) {
         this.fields.push(field);
-        this.addGroup(field);
+        addGroup(field, this.fieldGroups);
     };
-
-    private addGroup(field: Field) {
-        const t = field.tag;
-        const fs = this.fieldGroups.get(t);
-        if (fs === undefined) {
-            this.fieldGroups.set(t, [field]);
-        } else {
-            fs.push(field);
-        }
-    }
 
     receiveDataField(field: DataField) {
         this.fields.push(field);
+        addGroup(field, this.fieldGroups);
     };
 
 }
@@ -399,7 +407,6 @@ class IndicatorNode implements Node, Term, RSubscriber {
         private readonly operators: Operator[][]
     ) { }
     public value() {
-        console.log("indicator value");
         return fieldDataSet(this.evaluate);
     }
     public get tagPattern() {
@@ -407,12 +414,12 @@ class IndicatorNode implements Node, Term, RSubscriber {
     }
     public get evaluate() {
         const candidates0 = candidateFields(this.fields, this.spec.index);
-        const candidates1 = filterSubspec(this.operators, candidates0);
+        const groups = groupFields(candidates0);
+        const candidates1 = Array.from(groups.values()).map((cs) => filterSubspec(this.operators, cs, this.fieldGroups)).reduce((a, b) => a.concat(b), []);
 
         const data = [];
         for (const f of candidates1) {
             if (f instanceof DataField) {
-                console.log("referencing indicators '" + f.indicators + "' " + JSON.stringify(this.spec.indicator));
                 data.push([f.indicators.charAt(this.spec.indicator - 1)]);
             }
         }
@@ -425,21 +432,12 @@ class IndicatorNode implements Node, Term, RSubscriber {
 
     receiveControlField(field: ControlField) {
         this.fields.push(field);
-        this.addGroup(field);
+        addGroup(field, this.fieldGroups);
     };
-
-    private addGroup(field: Field) {
-        const t = field.tag;
-        const fs = this.fieldGroups.get(t);
-        if (fs === undefined) {
-            this.fieldGroups.set(t, [field]);
-        } else {
-            fs.push(field);
-        }
-    }
 
     receiveDataField(field: DataField) {
         this.fields.push(field);
+        addGroup(field, this.fieldGroups);
     };
 
 }
@@ -455,10 +453,8 @@ class CompStringNode implements Term {
         compString: ComparisonString
     ) {
         const { theString } = compString;
-        console.log('create com string theString: ' + theString);
         this._value.add(theString);
         this._value.add('foo');
-        console.log('value: ' + JSON.stringify(Array.from(this._value.values())) + ' has the string: ' + this._value.has(theString) + ' has foo: ' + this._value.has('foo'));
     }
 }
 
@@ -489,16 +485,15 @@ class AbbrIndicatorNode implements Term {
     ) { }
 
     public value(fieldGroup: Field[], outerField: Field) {
-        console.log("abbr indicator value");
         const result = new Set<string>();
         if (this.spec.index !== undefined) {
-            for (const f of fieldGroup) {
+            const candidates = candidateFields(fieldGroup, this.spec.index);
+            for (const f of candidates) {
                 if (f instanceof DataField) {
                     result.add(f.indicators.charAt(this.spec.indicator - 1));
                 }
             }
         } else if (outerField instanceof DataField) {
-            console.log("matching outer field indicators '" + outerField.indicators + "' " + JSON.stringify(this.spec));
             result.add(outerField.indicators.charAt(this.spec.indicator - 1));
         }
         return result;
@@ -518,7 +513,8 @@ class AbbrSubfieldNode implements Term {
     public value(fieldGroup: Field[], outerField: Field) {
         const result = new Set<string>();
         if (this.spec.index !== undefined) {
-            for (const f of fieldGroup) {
+            const candidates = candidateFields(fieldGroup, this.spec.index);
+            for (const f of candidates) {
                 if (f instanceof DataField) {
                     const data = subfieldData(f, this.spec.code);
                     for (const d of data) {
@@ -615,15 +611,20 @@ const buildOperator: (spec: SubTermSet, subscribers: RSubscriber[]) => Operator 
             case BinaryOperator.DOES_NOT_INCLUDE:
                 return new DoesNotIncludeOperator(lhs, rhs);
         }
+        throw Error("Invalid binary term spec: " + operator);
     } else {
         const { operator, rightHand } = spec;
         const rhs = buildTerm(rightHand, subscribers);
+        if (operator === undefined) {
+            return new ExistsOperator(rhs);
+        }
         switch (operator) {
             case UnaryOperator.EXISTS:
                 return new ExistsOperator(rhs);
             case UnaryOperator.DOES_NOT_EXIST:
                 return new DoesNotExistOperator(rhs);
         }
+        throw Error("Invalid unary term spec: " + operator);
     }
 }
 
