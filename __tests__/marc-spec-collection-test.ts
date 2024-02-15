@@ -29,12 +29,21 @@ test('MarcSpecCollection', () => {
     let t = [];
 
     for (const s of specs) {
-        t.push(c.addSpec(s[0]));
+        t.push(c.addSpec(s[0])[0]);
     }
+
+    const [all_titles, _] = c.addSpec('245');
 
     c.loadRecordBase64(marc_data);
 
     for (let i = 0; i < specs.length; i++) {
         assert.deepStrictEqual(t[i].evaluate, specs[i][1]);
     }
+
+
+    all_titles.fieldDelimiter = ', ';
+    all_titles.subfieldDelimiter = ':';
+
+    assert.strictEqual(all_titles.evaluate_str, 'Ordspråksskatten :[Kombinerat material] / :Linda Börjesson [text & musik] ; Karen Othelius [illustrationer]');
+
 });

@@ -4,9 +4,9 @@ import { base64RecordAsByteArray, extractFields } from './marc-parser';
 
 export class MarcSpecCollection {
 
-    private readonly collection: Map<string, EvalTree> = new Map();
+    private readonly collection: Map<string, [EvalTree, MARCSpec]> = new Map();
 
-    public addSpec(marcSpec: string) {
+    public addSpec(marcSpec: string): [EvalTree, MARCSpec] {
         if (this.collection.has(marcSpec)) {
             return this.collection.get(marcSpec);
         }
@@ -18,13 +18,13 @@ export class MarcSpecCollection {
 
         const t = buildTree(r);
 
-        this.collection.set(marcSpec, t);
+        this.collection.set(marcSpec, [t, r]);
 
-        return t;
+        return [t, r];
     }
 
     public get subscribers() {
-        return Array.from(this.collection.values()).map((t) => t.subscribers).reduce((a, b) => a.concat(b), []);
+        return Array.from(this.collection.values()).map((t) => t[0].subscribers).reduce((a, b) => a.concat(b), []);
     }
 
     public loadRecordBase64(record: string) {

@@ -6,6 +6,11 @@ interface Node {
 }
 
 export class EvalTree implements Node {
+
+    public subfieldDelimiter: string = '';
+
+    public fieldDelimiter: string = ' ; ';
+
     constructor(
         private readonly root: Node,
         public readonly subscribers: RSubscriber[]
@@ -13,6 +18,10 @@ export class EvalTree implements Node {
 
     public get evaluate() {
         return this.root.evaluate;
+    }
+
+    public get evaluate_str() {
+        return this.evaluate.map((f) => f.join(this.subfieldDelimiter)).join(this.fieldDelimiter);
     }
 }
 
