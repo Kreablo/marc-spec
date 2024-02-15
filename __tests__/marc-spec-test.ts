@@ -66,7 +66,7 @@ test('MarcSpec: fieldSpec', () => {
 
 test('MarcSpec: subTermSet', () => {
     const parse = (input: string) => expectSingleResult(expectEOF(subTermSet.parse(newMarcSpecLexer().parse(input))));
-    const unused = new ComparisonString('unused');
+    const unused = new ComparisonString('unused', "\\");
 
     const s1 = parse('001');
     assert.deepStrictEqual(s1(unused), new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, [])));
@@ -77,7 +77,7 @@ test('MarcSpec: subTermSet', () => {
 
 test('MarcSpec: subAndSpec', () => {
     const parse = (input: string) => expectSingleResult(expectEOF(subAndSpec.parse(newMarcSpecLexer().parse(input))));
-    const applyUnused = (s) => s.map((s0) => s0.map((s1) => s1(new ComparisonString('unused'))));
+    const applyUnused = (s) => s.map((s0) => s0.map((s1) => s1(new ComparisonString('unused', '\\'))));
 
     const s1 = parse('{001}');
     assert.deepStrictEqual(applyUnused(s1), [[new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, []))]]);
@@ -85,7 +85,7 @@ test('MarcSpec: subAndSpec', () => {
     const s2 = parse('{001|020[0]$a!=\\foo}');
     assert.deepStrictEqual(applyUnused(s2), [[
         new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, [])),
-        new BinarySubTermSet(new SubfieldSpec('020', new IndexSpec(0), new SubfieldCode('a', 'a'), undefined, undefined, []), BinaryOperator.NOT_EQUALS, new ComparisonString('foo'))
+        new BinarySubTermSet(new SubfieldSpec('020', new IndexSpec(0), new SubfieldCode('a', 'a'), undefined, undefined, []), BinaryOperator.NOT_EQUALS, new ComparisonString('foo', '\\'))
     ]]);
 
     const empty = parse('');
@@ -99,7 +99,7 @@ test('MarcSpec: MARCSpec', () => {
     assert.deepStrictEqual(m, new MARCSpec(new FieldSpec('LDR', undefined, undefined, [])));
 
     const m0 = parse('001/2-#{\\foo\\=\\{\\}\\!\\\\=[0]}');
-    assert.deepStrictEqual(m0, new MARCSpec(new FieldSpec('001', undefined, new CharacterSpec({ start: 2, end: '#' }), [[new BinarySubTermSet(new ComparisonString('foo={}!\\'), BinaryOperator.EQUALS, new AbbrFieldSpec(new IndexSpec(0), undefined))]])));
+    assert.deepStrictEqual(m0, new MARCSpec(new FieldSpec('001', undefined, new CharacterSpec({ start: 2, end: '#' }), [[new BinarySubTermSet(new ComparisonString('foo={}!\\', '\\'), BinaryOperator.EQUALS, new AbbrFieldSpec(new IndexSpec(0), undefined))]])));
 });
 
 test('MarcSpec: parseMarcSpec', () => {
@@ -137,4 +137,7 @@ test('MarcSpec: serializeMarcSpec', () => {
     testSerialize('LDR');
     testSerialize('999[0-#]^2');
     testSerialize('998[1-2]$a-c[0-1]/2-3{/1!=\\1|\\\\\\~997$a}');
+
+    testSerialize('111$a{$b="double\\\\\\"\'"}');
+    testSerialize("111$a{$b='single\\\\\\'\"'}");
 });

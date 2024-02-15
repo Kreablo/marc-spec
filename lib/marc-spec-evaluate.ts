@@ -346,6 +346,7 @@ class FieldNode implements Node, RSubscriber, Term {
         return data.map((d) => d.map(this._charExtractor));
     };
 }
+
 class SubfieldNode implements Node, Term, RSubscriber {
     private fields: Field[] = [];
 
@@ -397,6 +398,7 @@ class SubfieldNode implements Node, Term, RSubscriber {
     };
 
 }
+
 class IndicatorNode implements Node, Term, RSubscriber {
     private fields: Field[] = [];
 
@@ -441,6 +443,7 @@ class IndicatorNode implements Node, Term, RSubscriber {
     };
 
 }
+
 class CompStringNode implements Term {
 
     private readonly _value: Set<string> = new Set<string>();

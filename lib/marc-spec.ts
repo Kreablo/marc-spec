@@ -3,6 +3,8 @@ import { KLexer, KLexerContext } from '@kreablo/k-lexer';
 
 export enum TokenType {
     COMPARISON_STRING,
+    COMPARISON_STRING_SINGLE_QUOTED,
+    COMPARISON_STRING_DOUBLE_QUOTED,
     INTEGER,
     ZERO,
     POSITIVE_DIGIT,
@@ -26,6 +28,8 @@ export enum TokenType {
 };
 
 export type Position = number | '#';
+
+export type CompStringSyntax = '"' | "'" | '\\';
 
 export type Range = {
     start: Position,
@@ -146,15 +150,30 @@ const toAbbr: (spec: SubfieldSpec | FieldSpec | IndicatorSpec) => AbbrFieldSpec 
 
 const unescapeSpaceRe: RegExp = /\\s/g;
 const unescapeCompStringRe: RegExp = /\\([\$\{\}!=~\?\|\}\\])/g;
+const unescapeSingleQuoteCompStringRe: RegExp = /\\(['\\])/g;
+const unescapeDoubleQuoteCompStringRe: RegExp = /\\(["\\])/g;
 const escapeCompStringRe: RegExp = /([\$\{\}!=~\?\|\}\\])/g;
+const escapeSingleQuoteCompStringRe: RegExp = /(['\\])/g;
+const escapeDoubleQuoteCompStringRe: RegExp = /(["\\])/g;
 
 export class ComparisonString {
 
     public readonly theString: string;
 
-    constructor(compString: string) {
-        const s = compString.replace(unescapeSpaceRe, (_1, _2) => ' ');
-        this.theString = s.replace(unescapeCompStringRe, (_, c) => c);
+    public readonly syntaxType: CompStringSyntax;
+
+    constructor(compString: string, syntaxType: CompStringSyntax) {
+        if (syntaxType === "'") {
+            const s = compString.substring(1, compString.length - 1);
+            this.theString = s.replace(unescapeSingleQuoteCompStringRe, (_, c) => c);
+        } else if (syntaxType === '"') {
+            const s = compString.substring(1, compString.length - 1);
+            this.theString = s.replace(unescapeDoubleQuoteCompStringRe, (_, c) => c);
+        } else {
+            const s = compString.replace(unescapeSpaceRe, (_1, _2) => ' ');
+            this.theString = s.replace(unescapeCompStringRe, (_, c) => c);
+        }
+        this.syntaxType = syntaxType;
     }
 }
 
@@ -250,6 +269,8 @@ const _l: (regexp: string, tokentype: TokenType, keep: boolean) => (nextContext:
 const integer = _l('[0-9]+', TokenType.INTEGER, true);
 
 const comparison_string = _l('(?:["#%-<>@-Z^-z]|[^\\u0000-\\u007F]|\\\\[!-~\\|=])+', TokenType.COMPARISON_STRING, true);
+const comparison_string_single_quote = _l("'(?:[^'\\\\]|\\\\[\\\\'])*'", TokenType.COMPARISON_STRING_SINGLE_QUOTED, true);
+const comparison_string_double_quote = _l('"(?:[^\\\\"]|\\\\[\\\\"])*"', TokenType.COMPARISON_STRING_DOUBLE_QUOTED, true);
 const begin_comparison = _l('\\\\', TokenType.BEGIN_COMPARISON, true);
 const positive_digit = _l('[1-9]', TokenType.POSITIVE_DIGIT, true);
 const hash = _l('#', TokenType.HASH, true);
@@ -339,7 +360,9 @@ const top_context: ctx = [Context.TOP, new KLexerContext(
         binary_operator(Context.TOP),
         unary_operator(Context.TOP),
         subterm_separator(Context.TOP),
-        begin_comparison(Context.COMPARISON_STRING)
+        begin_comparison(Context.COMPARISON_STRING),
+        comparison_string_single_quote(Context.TOP),
+        comparison_string_double_quote(Context.TOP)
     ], 'failed-lexing-top-context', 'm')
 ];
 
@@ -395,8 +418,13 @@ const specStart: Parser<TokenType, [string, IndexSpec | undefined]> = apply(seq(
 export const fullSpec: Parser<TokenType, (subSpec: SubTermSet[][]) => SubfieldSpec | FieldSpec | IndicatorSpec> = apply(seq(specStart, alt_sc(subfieldSpec, indicatorSpec, fieldSpec)),
     ([[tag, index], alt1]) => (subSpec) => alt1(tag, index, subSpec));
 
-export const comparisonString: Parser<TokenType, ComparisonString> = apply(kright(tok(TokenType.BEGIN_COMPARISON), tok(TokenType.COMPARISON_STRING)),
-    (token) => new ComparisonString(token.text));
+export const comparisonString: Parser<TokenType, ComparisonString> = apply(alt_sc(kright(tok(TokenType.BEGIN_COMPARISON), tok(TokenType.COMPARISON_STRING)), alt_sc(tok(TokenType.COMPARISON_STRING_DOUBLE_QUOTED), tok(TokenType.COMPARISON_STRING_SINGLE_QUOTED))),
+    (token) => {
+        const syntaxType: CompStringSyntax = token.kind === TokenType.COMPARISON_STRING_DOUBLE_QUOTED ? '"' :
+            (token.kind === TokenType.COMPARISON_STRING_SINGLE_QUOTED ? "'" : "\\");
+
+        return new ComparisonString(token.text, syntaxType);
+    });
 
 export const unarySubTerm: Parser<TokenType, UnarySubTerm> = apply(alt_sc(fullSpec, abbreviation),
     (alt1) => typeof alt1 === 'function' ? alt1([]) : alt1);
@@ -562,7 +590,12 @@ export const serializeTerm: (term: BinarySubTerm) => string = (term) => {
     if (term instanceof AbbrSubfieldSpec) {
         return serializeAbbrSubfieldSpec(term);
     }
-    const { theString } = term;
+    const { theString, syntaxType } = term;
+    if (syntaxType === "'") {
+        return "'" + theString.replace(escapeSingleQuoteCompStringRe, '\\$&') + "'";
+    } else if (syntaxType === '"') {
+        return '"' + theString.replace(escapeDoubleQuoteCompStringRe, '\\$&') + '"';
+    }
     const s0 = theString.replace(escapeCompStringRe, '\\$&');
     const s1 = s0.replace(/ /g, '\\s');
     return '\\' + s1;
