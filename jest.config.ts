@@ -7,11 +7,13 @@ const jestConfig: JestConfigWithTsJest = {
             'ts-jest',
             {
                 useESM: true,
+                tsconfig: "tsconfig-jest.json"
             },
         ],
     },
     testEnvironment: 'node',
-    testRegex: "/__tests__/.*[jt]s?(x)?"
+    testRegex: "/__tests__/.*[jt]s?(x)?",
+    modulePaths: ["node_modules"],
 };
 
 export default jestConfig;
