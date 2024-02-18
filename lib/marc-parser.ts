@@ -122,6 +122,9 @@ export const extractFields: (b: Uint8Array, subscribers: Subscriber[]) => void =
 
     for (let i = 24; b[i] !== 0x1E && i < meta.length && i < b.length - marc_directory_entry_length; i += marc_directory_entry_length) {
         const tag = byteArrayToTag(b, i);
+        if (tag === null) {
+            continue;
+        }
         const matching = subscribers.filter((s) => tagMatcher(tag, s.tagPattern));
         if (matching.length > 0) {
             const l = byteArrayToInt(b, i + 3, i + 3 + meta.length_of_length - 1);
@@ -154,7 +157,7 @@ export const parseSubfields: (b: Uint8Array, meta: MarcRecordMeta, entry: Direct
         if (result.has(k)) {
             return result.get(k);
         }
-        const es = [];
+        const es: Subfield[] = [];
         result.set(k, es);
         return es;
     };

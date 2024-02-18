@@ -1,4 +1,4 @@
-import { apply, kright, kmid, alt_sc, alt, opt_sc, list_sc, rep_sc, tok, seq, Token, Parser, expectEOF, ParseError } from 'typescript-parsec';
+import { apply, kright, kmid, alt_sc, alt, opt_sc, list_sc, rep_sc, tok, seq, Token, Parser, expectEOF, ParseError, TokenPosition } from 'typescript-parsec';
 import { KLexer, KLexerContext } from '@kreablo/k-lexer';
 
 export enum TokenType {
@@ -48,7 +48,7 @@ export class IndexSpec {
 
 export class ItemSpec {
     constructor(
-        public readonly tag: string | undefined,
+        public readonly tag: string,
         public readonly index: IndexSpec | undefined,
         public readonly subSpec: SubTermSet[][]
     ) {
@@ -242,7 +242,7 @@ const unOpString: (op: UnaryOperator | undefined) => '' | '!' | '?' = (op) => {
 
 export class BinarySubTermSet {
     constructor(
-        public readonly leftHand: BinarySubTerm | undefined,
+        public readonly leftHand: BinarySubTerm,
         public readonly operator: BinaryOperator,
         public readonly rightHand: BinarySubTerm
     ) { }
@@ -448,7 +448,21 @@ export const subAndSpec: Parser<TokenType, ((outerSpec: BinarySubTerm) => SubTer
 
 export const marcSpec: Parser<TokenType, MARCSpec> = apply(seq(fullSpec, subAndSpec), ([fullSpec, subSpec]) => new MARCSpec(fullSpec(subSpec.map((s) => s.map((s0) => s0(toAbbr(fullSpec([]))))))));
 
-export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input: string) => {
+function isTokenPosition(o: any): o is TokenPosition {
+    if (o === null || typeof o !== 'object') {
+        return false;
+    }
+    for (const p of ['index', 'rowBegin', 'columnBegin', 'rowEnd', 'columnEnd']) {
+        const pd = Object.getOwnPropertyDescriptor(o, p);
+        if (pd === undefined || typeof pd.value !== 'number') {
+            return false;
+        }
+    }
+    return true;
+};
+
+export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input) => {
+    let result: ParseError;
     try {
         const result = expectEOF(marcSpec.parse(newMarcSpecLexer().parse(input)));
 
@@ -457,16 +471,22 @@ export const parseMarcSpec: (input: string) => ParseError | MARCSpec = (input: s
         }
         return result.error;
     } catch (e) {
-        if (typeof e === 'object') {
-            if (typeof e.kind === 'string' && e.kind === 'Error' && typeof e.message === 'string') {
-                return e;
+        if (typeof e === 'object' && e !== null) {
+            if ('kind' in e && e.kind === 'Error' && 'message' in e && typeof e.message === 'string') {
+                let pos = 'pos' in e && isTokenPosition(e.pos) ? e.pos : undefined;
+                result = {
+                    kind: e.kind,
+                    pos: pos,
+                    message: e.message
+                };
+                return result;
             }
-            if (typeof e.pos === 'object' && typeof e.errorMessage === 'string') {
+            if ('pos' in e && isTokenPosition(e.pos) && 'errorMessage' in e && typeof e.errorMessage === 'string') {
                 return { kind: 'Error', pos: e.pos, message: e.errorMessage };
             }
         }
     }
-    return { kind: 'Error', message: 'unknown-error' };
+    return { kind: 'Error', pos: undefined, message: 'unknown-error' };
 };
 
 export const serializeMarcSpec: (marcSpec: MARCSpec) => string = (marcSpec: MARCSpec) => {

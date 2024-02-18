@@ -8,7 +8,10 @@ export class MarcSpecCollection {
 
     public addSpec(marcSpec: string): [EvalTree, MARCSpec] {
         if (this.collection.has(marcSpec)) {
-            return this.collection.get(marcSpec);
+            const s = this.collection.get(marcSpec);
+            if (s !== undefined) {
+                return s;
+            }
         }
 
         const r = parseMarcSpec(marcSpec);
@@ -32,11 +35,14 @@ export class MarcSpecCollection {
     }
 
     public loadRecordBinary(record: Uint8Array) {
-        const rsubs = this.subscribers;
-        for (const s of rsubs) {
+        this.reset();
+        extractFields(record, this.subscribers);
+    }
+
+    public reset() {
+        for (const s of this.subscribers) {
             s.reset();
         }
-        extractFields(record, this.subscribers);
     }
 
 }

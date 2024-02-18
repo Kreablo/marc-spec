@@ -106,8 +106,16 @@ test('MarcSpec: parseMarcSpec', () => {
     const result = parseMarcSpec('foo\nbar\n');
     assert.ok(!(result instanceof MARCSpec));
 
-    assert.strictEqual(result.message, "failed-lexing-top-context");
-    assert.deepStrictEqual(result.pos, { index: 3, columnBegin: 4, columnEnd: 4, rowBegin: 1, rowEnd: 1 });
+    if ('message' in result) {
+        assert.strictEqual(result.message, "failed-lexing-top-context");
+    } else {
+        assert.ok(false);
+    }
+    if ('pos' in result) {
+        assert.deepStrictEqual(result.pos, { index: 3, columnBegin: 4, columnEnd: 4, rowBegin: 1, rowEnd: 1 });
+    } else {
+        assert.ok(false);
+    }
 
     const result0 = parseMarcSpec('5..{$a=[1]$a[0]}');
     assert.ok(result0 instanceof MARCSpec);

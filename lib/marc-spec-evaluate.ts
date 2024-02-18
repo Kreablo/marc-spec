@@ -105,17 +105,24 @@ const subfieldData: (field: DataField, code: SubfieldCode) => string[] = (field,
     const { start, end } = code;
 
     if (start === end) {
-        return field.subfields.has(start) ? field.subfields.get(start).map((sf) => sf.data) : [];
+        const startfield = field.subfields.get(start);
+        return startfield !== undefined ? startfield.map((sf) => sf.data) : [];
     }
 
     const startcp = start.codePointAt(0);
     const endcp = end.codePointAt(0);
     const result = [];
+    if (startcp === undefined || endcp === undefined) {
+        return [];
+    }
     for (const c of field.subfields.keys()) {
         const cp = c.charCodeAt(0);
         if (startcp <= cp && cp <= endcp) {
             if (field.subfields.has(c)) {
                 const sfs = field.subfields.get(c);
+                if (sfs === undefined) {
+                    continue;
+                }
                 for (const sf of sfs) {
                     result.push(sf.data);
                 }
@@ -267,10 +274,14 @@ const filterSubspec: (operators: Operator[][], fields: Field[], groups: Map<stri
     const result = [];
     for (const f of fields) {
         let accept = true;
+        const group = groups.get(f.tag);
+        if (group === undefined) {
+            continue;
+        }
         for (const conj of operators) {
             accept = false;
             for (const disj of conj) {
-                const v = disj.match(groups.get(f.tag), f);
+                const v = disj.match(group, f);
                 if (v) {
                     accept = true;
                     break;
@@ -549,7 +560,7 @@ class AbbrSubfieldNode implements Term {
 export const buildTree: (marcSpec: MARCSpec) => EvalTree = (marcSpec) => {
     const { spec } = marcSpec;
 
-    const subscribers = [];
+    const subscribers: RSubscriber[] = [];
 
     const root = buildNode(spec, subscribers);
 
