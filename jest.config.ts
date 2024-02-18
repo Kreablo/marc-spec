@@ -1,6 +1,7 @@
 import type { JestConfigWithTsJest } from 'ts-jest';
 
 const jestConfig: JestConfigWithTsJest = {
+    preset: 'ts-jest',
     transformIgnorePatterns: ["\\.pnp\\.[^\\\/]+$"],
     transform: {
         '^.+\\.tsx?$': [
@@ -13,7 +14,7 @@ const jestConfig: JestConfigWithTsJest = {
     },
     testEnvironment: 'node',
     testRegex: "/__tests__/.*[jt]s?(x)?",
-    modulePaths: ["node_modules"],
+    modulePaths: ["node_modules"]
 };
 
 export default jestConfig;
