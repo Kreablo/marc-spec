@@ -6,6 +6,10 @@ export class MarcSpecCollection {
 
     private readonly collection: Map<string, [EvalTree, MARCSpec]> = new Map();
 
+    private needsReload: boolean = false;
+
+    private record: Uint8Array | null = null;
+
     public addSpec(marcSpec: string): [EvalTree, MARCSpec] {
         if (this.collection.has(marcSpec)) {
             const s = this.collection.get(marcSpec);
@@ -35,7 +39,9 @@ export class MarcSpecCollection {
     }
 
     public loadRecordBinary(record: Uint8Array) {
+        this.needsReload = false;
         this.reset();
+        this.record = record;
         extractFields(record, this.subscribers);
     }
 
@@ -43,6 +49,14 @@ export class MarcSpecCollection {
         for (const s of this.subscribers) {
             s.reset();
         }
+    }
+
+    public reloadIfNeeded(): boolean {
+        if (this.needsReload && this.record !== null) {
+            this.loadRecordBinary(this.record);
+            return true;
+        }
+        return false;
     }
 
 }
