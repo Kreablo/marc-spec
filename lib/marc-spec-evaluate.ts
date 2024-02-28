@@ -396,7 +396,11 @@ class SubfieldNode implements Node, Term, RSubscriber {
         const data = [];
         for (const f of candidates1) {
             if (f instanceof DataField) {
-                data.push(subfieldData(f, this.spec.code));
+                const sfData = [];
+                for (const code of this.spec.codes) {
+                    sfData.push(subfieldData(f, code));
+                }
+                data.push(sfData.reduce((a, b) => a.concat(b)));
             }
         }
 
@@ -539,17 +543,21 @@ class AbbrSubfieldNode implements Term {
             const candidates = candidateFields(fieldGroup, this.spec.index);
             for (const f of candidates) {
                 if (f instanceof DataField) {
-                    const data = subfieldData(f, this.spec.code);
-                    for (const d of data) {
-                        result.add(this._charExtractor(d));
+                    for (const code of this.spec.codes) {
+                        const data = subfieldData(f, code);
+                        for (const d of data) {
+                            result.add(this._charExtractor(d));
+                        }
                     }
                 }
             }
         } else {
             if (outerField instanceof DataField) {
-                const data = subfieldData(outerField, this.spec.code);
-                for (const d of data) {
-                    result.add(this._charExtractor(d));
+                for (const code of this.spec.codes) {
+                    const data = subfieldData(outerField, code);
+                    for (const d of data) {
+                        result.add(this._charExtractor(d));
+                    }
                 }
             }
         }

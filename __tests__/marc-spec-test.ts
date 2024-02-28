@@ -58,7 +58,7 @@ test('MarcSpec: fieldSpec', () => {
     assert.deepStrictEqual(m020([]), new FieldSpec('020', new IndexSpec({ start: 0, end: '#' }), new CharacterSpec({ start: 0, end: '#' }), []));
 
     const m020a = parse('020[10-11]$a-c[12-13]/14-#');
-    assert.deepStrictEqual(m020a([]), new SubfieldSpec('020', new IndexSpec({ start: 10, end: 11 }), new SubfieldCode('a', 'c'), new IndexSpec({ start: 12, end: 13 }), new CharacterSpec({ start: 14, end: '#' }), []));
+    assert.deepStrictEqual(m020a([]), new SubfieldSpec('020', new IndexSpec({ start: 10, end: 11 }), [new SubfieldCode('a', 'c')], new IndexSpec({ start: 12, end: 13 }), new CharacterSpec({ start: 14, end: '#' }), []));
 
     const ind = parse('100[100-#]^1');
     assert.deepStrictEqual(ind([]), new IndicatorSpec('100', 1, new IndexSpec({ start: 100, end: '#' }), []));
@@ -85,7 +85,7 @@ test('MarcSpec: subAndSpec', () => {
     const s2 = parse('{001|020[0]$a!=\\foo}');
     assert.deepStrictEqual(applyUnused(s2), [[
         new UnarySubTermSet(undefined, new FieldSpec('001', undefined, undefined, [])),
-        new BinarySubTermSet(new SubfieldSpec('020', new IndexSpec(0), new SubfieldCode('a', 'a'), undefined, undefined, []), BinaryOperator.NOT_EQUALS, new ComparisonString('foo', '\\'))
+        new BinarySubTermSet(new SubfieldSpec('020', new IndexSpec(0), [new SubfieldCode('a', 'a')], undefined, undefined, []), BinaryOperator.NOT_EQUALS, new ComparisonString('foo', '\\'))
     ]]);
 
     const empty = parse('');
@@ -122,9 +122,9 @@ test('MarcSpec: parseMarcSpec', () => {
     assert.deepStrictEqual(result0, new MARCSpec(new FieldSpec('5..', undefined, undefined, [
         [
             new BinarySubTermSet(
-                new AbbrSubfieldSpec(undefined, new SubfieldCode("a", "a"), undefined, undefined),
+                new AbbrSubfieldSpec(undefined, [new SubfieldCode("a", "a")], undefined, undefined),
                 BinaryOperator.EQUALS,
-                new AbbrSubfieldSpec(new IndexSpec(1), new SubfieldCode("a", "a"), new IndexSpec(0), undefined)
+                new AbbrSubfieldSpec(new IndexSpec(1), [new SubfieldCode("a", "a")], new IndexSpec(0), undefined)
             )
         ]
     ])));
