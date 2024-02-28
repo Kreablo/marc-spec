@@ -38,8 +38,13 @@ const limitRange: (rangeOrPosition: Range | Position, maxIndex: number) => [numb
     let end0: number | '#';
     if (typeof rangeOrPosition === 'object') {
         const { start, end } = rangeOrPosition;
-        start0 = start;
-        end0 = end;
+        if (start === '#' && end !== '#') {
+            start0 = maxIndex - end;
+            end0 = maxIndex;
+        } else {
+            start0 = start;
+            end0 = end;
+        }
     } else {
         start0 = rangeOrPosition;
         end0 = rangeOrPosition;
