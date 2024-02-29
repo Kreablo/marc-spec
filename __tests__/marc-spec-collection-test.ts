@@ -40,10 +40,12 @@ test('MarcSpecCollection', () => {
         assert.deepStrictEqual(t[i].evaluate, specs[i][1]);
     }
 
-
     all_titles.fieldDelimiter = ', ';
     all_titles.subfieldDelimiter = ':';
 
     assert.strictEqual(all_titles.evaluate_str, 'Ordspråksskatten :[Kombinerat material] / :Linda Börjesson [text & musik] ; Karen Othelius [illustrationer]');
 
+    const [t0] = c.addSpec('681$a[2]');
+
+    assert.deepStrictEqual(t0.evaluate, [['Sång']]);
 });
