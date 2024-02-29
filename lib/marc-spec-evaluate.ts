@@ -58,7 +58,7 @@ const limitRange: (rangeOrPosition: Range | Position, maxIndex: number) => [numb
     return [start0, end0, reverse];
 };
 
-const candidateFields: (fields: Field[] | undefined, index: IndexSpec | undefined) => Field[] = (fields, index) => {
+const candidateFields: <FT> (fields: FT[] | undefined, index: IndexSpec | undefined) => FT[] = (fields, index) => {
     if (fields === undefined) {
         return [];
     }
@@ -405,7 +405,7 @@ class SubfieldNode implements Node, Term, RSubscriber {
                 for (const code of this.spec.codes) {
                     sfData.push(subfieldData(f, code));
                 }
-                data.push(sfData.reduce((a, b) => a.concat(b)));
+                data.push(candidateFields(sfData.reduce((a, b) => a.concat(b)), this.spec.subindex));
             }
         }
 
@@ -549,7 +549,7 @@ class AbbrSubfieldNode implements Term {
             for (const f of candidates) {
                 if (f instanceof DataField) {
                     for (const code of this.spec.codes) {
-                        const data = subfieldData(f, code);
+                        const data = candidateFields(subfieldData(f, code), this.spec.subindex);
                         for (const d of data) {
                             result.add(this._charExtractor(d));
                         }
@@ -559,7 +559,7 @@ class AbbrSubfieldNode implements Term {
         } else {
             if (outerField instanceof DataField) {
                 for (const code of this.spec.codes) {
-                    const data = subfieldData(outerField, code);
+                    const data = candidateFields(subfieldData(outerField, code), this.spec.subindex);
                     for (const d of data) {
                         result.add(this._charExtractor(d));
                     }
