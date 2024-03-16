@@ -19,8 +19,14 @@ const limitRange = (rangeOrPosition, maxIndex) => {
     let end0;
     if (typeof rangeOrPosition === 'object') {
         const { start, end } = rangeOrPosition;
-        start0 = start;
-        end0 = end;
+        if (start === '#' && end !== '#') {
+            start0 = maxIndex - end;
+            end0 = maxIndex;
+        }
+        else {
+            start0 = start;
+            end0 = end;
+        }
     }
     else {
         start0 = rangeOrPosition;
@@ -327,7 +333,11 @@ class SubfieldNode {
         const data = [];
         for (const f of candidates1) {
             if (f instanceof DataField) {
-                data.push(subfieldData(f, this.spec.code));
+                const sfData = [];
+                for (const code of this.spec.codes) {
+                    sfData.push(subfieldData(f, code));
+                }
+                data.push(candidateFields(sfData.reduce((a, b) => a.concat(b)), this.spec.subindex));
             }
         }
         return data.map((d) => d.map(this._charExtractor));
@@ -443,18 +453,22 @@ class AbbrSubfieldNode {
             const candidates = candidateFields(fieldGroup, this.spec.index);
             for (const f of candidates) {
                 if (f instanceof DataField) {
-                    const data = subfieldData(f, this.spec.code);
-                    for (const d of data) {
-                        result.add(this._charExtractor(d));
+                    for (const code of this.spec.codes) {
+                        const data = candidateFields(subfieldData(f, code), this.spec.subindex);
+                        for (const d of data) {
+                            result.add(this._charExtractor(d));
+                        }
                     }
                 }
             }
         }
         else {
             if (outerField instanceof DataField) {
-                const data = subfieldData(outerField, this.spec.code);
-                for (const d of data) {
-                    result.add(this._charExtractor(d));
+                for (const code of this.spec.codes) {
+                    const data = candidateFields(subfieldData(outerField, code), this.spec.subindex);
+                    for (const d of data) {
+                        result.add(this._charExtractor(d));
+                    }
                 }
             }
         }

@@ -7,6 +7,7 @@ const marc_parser_1 = require("./marc-parser");
 class MarcSpecCollection {
     constructor() {
         this.collection = new Map();
+        this.record = null;
     }
     addSpec(marcSpec) {
         if (this.collection.has(marcSpec)) {
@@ -21,6 +22,9 @@ class MarcSpecCollection {
         }
         const t = (0, marc_spec_evaluate_1.buildTree)(r);
         this.collection.set(marcSpec, [t, r]);
+        if (this.record !== null) {
+            (0, marc_parser_1.extractFields)(this.record, t.subscribers);
+        }
         return [t, r];
     }
     get subscribers() {
@@ -31,6 +35,7 @@ class MarcSpecCollection {
     }
     loadRecordBinary(record) {
         this.reset();
+        this.record = record;
         (0, marc_parser_1.extractFields)(record, this.subscribers);
     }
     reset() {

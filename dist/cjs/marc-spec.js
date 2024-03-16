@@ -79,18 +79,18 @@ class SubfieldCode {
 }
 exports.SubfieldCode = SubfieldCode;
 class SubfieldSpec extends ItemSpec {
-    constructor(tag, index, code, subindex, characterSpec, subSpec) {
+    constructor(tag, index, codes, subindex, characterSpec, subSpec) {
         super(tag, index, subSpec);
-        this.code = code;
+        this.codes = codes;
         this.subindex = subindex;
         this.characterSpec = characterSpec;
     }
 }
 exports.SubfieldSpec = SubfieldSpec;
 class AbbrSubfieldSpec extends AbbrSpec {
-    constructor(index, code, subindex, characterSpec) {
+    constructor(index, codes, subindex, characterSpec) {
         super(index);
-        this.code = code;
+        this.codes = codes;
         this.subindex = subindex;
         this.characterSpec = characterSpec;
     }
@@ -116,8 +116,8 @@ const toAbbr = (spec) => {
         return new AbbrFieldSpec(index, characterSpec);
     }
     if (spec instanceof SubfieldSpec) {
-        const { index, code, subindex, characterSpec } = spec;
-        return new AbbrSubfieldSpec(index, code, subindex, characterSpec);
+        const { index, codes, subindex, characterSpec } = spec;
+        return new AbbrSubfieldSpec(index, codes, subindex, characterSpec);
     }
     const { index, indicator } = spec;
     return new AbbrIndicatorSpec(indicator, index);
@@ -337,8 +337,8 @@ exports.abbrIndicatorSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec
 exports.fieldSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.opt_sc)(exports.characterSpec), (cspec) => (tag, index, subSpec) => new FieldSpec(tag, index, cspec, subSpec));
 exports.abbrFieldSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.opt_sc)(exports.characterSpec), (cspec) => (index) => new AbbrFieldSpec(index, cspec));
 exports.subfieldCode = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)((0, typescript_parsec_1.tok)(TokenType.SUBFIELD_MARKER), (0, typescript_parsec_1.tok)(TokenType.SUBFIELD_CHAR), (0, typescript_parsec_1.opt_sc)((0, typescript_parsec_1.seq)((0, typescript_parsec_1.tok)(TokenType.RANGE_MARK), (0, typescript_parsec_1.tok)(TokenType.SUBFIELD_CHAR)))), ([_1, start, mend]) => new SubfieldCode(start.text, mend === undefined ? start.text : mend[1].text));
-exports.abbrSubfieldSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)(exports.subfieldCode, (0, typescript_parsec_1.opt_sc)(exports.index), (0, typescript_parsec_1.opt_sc)(exports.characterSpec)), ([code, ispec, cspec]) => (index) => new AbbrSubfieldSpec(index, code, ispec, cspec));
-exports.subfieldSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)(exports.subfieldCode, (0, typescript_parsec_1.opt_sc)(exports.index), (0, typescript_parsec_1.opt_sc)(exports.characterSpec)), ([code, ispec, cspec]) => (tag, index, subSpec) => new SubfieldSpec(tag, index, code, ispec, cspec, subSpec));
+exports.abbrSubfieldSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)(exports.subfieldCode, (0, typescript_parsec_1.rep_sc)(exports.subfieldCode), (0, typescript_parsec_1.opt_sc)(exports.index), (0, typescript_parsec_1.opt_sc)(exports.characterSpec)), ([code, codes, ispec, cspec]) => (index) => new AbbrSubfieldSpec(index, [code].concat(codes), ispec, cspec));
+exports.subfieldSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)(exports.subfieldCode, (0, typescript_parsec_1.rep_sc)(exports.subfieldCode), (0, typescript_parsec_1.opt_sc)(exports.index), (0, typescript_parsec_1.opt_sc)(exports.characterSpec)), ([code, codes, ispec, cspec]) => (tag, index, subSpec) => new SubfieldSpec(tag, index, [code].concat(codes), ispec, cspec, subSpec));
 exports.abbreviation = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)((0, typescript_parsec_1.opt_sc)(exports.index), (0, typescript_parsec_1.alt_sc)(exports.abbrSubfieldSpec, exports.abbrIndicatorSpec, exports.abbrFieldSpec)), ([index, alt1]) => alt1(index));
 const specStart = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)((0, typescript_parsec_1.tok)(TokenType.FIELD_TAG), (0, typescript_parsec_1.opt_sc)(exports.index)), ([token, index]) => [token.text, index]);
 exports.fullSpec = (0, typescript_parsec_1.apply)((0, typescript_parsec_1.seq)(specStart, (0, typescript_parsec_1.alt_sc)(exports.subfieldSpec, exports.indicatorSpec, exports.fieldSpec)), ([[tag, index], alt1]) => (subSpec) => alt1(tag, index, subSpec));
@@ -426,13 +426,13 @@ const serializeAbbrIndicatorSpec = (indicatorSpec) => {
 };
 exports.serializeAbbrIndicatorSpec = serializeAbbrIndicatorSpec;
 const serializeSubfieldSpec = (subfieldSpec) => {
-    const { tag, index, code, subindex, characterSpec, subSpec } = subfieldSpec;
-    return tag + (0, exports.serializeIndex)(index) + (0, exports.serializeCode)(code) + (0, exports.serializeIndex)(subindex) + (0, exports.serializeCharacterSpec)(characterSpec) + (0, exports.serializeSubSpec)(subSpec);
+    const { tag, index, codes, subindex, characterSpec, subSpec } = subfieldSpec;
+    return tag + (0, exports.serializeIndex)(index) + codes.map(exports.serializeCode).join('') + (0, exports.serializeIndex)(subindex) + (0, exports.serializeCharacterSpec)(characterSpec) + (0, exports.serializeSubSpec)(subSpec);
 };
 exports.serializeSubfieldSpec = serializeSubfieldSpec;
 const serializeAbbrSubfieldSpec = (subfieldSpec) => {
-    const { index, code, subindex, characterSpec } = subfieldSpec;
-    return (0, exports.serializeIndex)(index) + (0, exports.serializeCode)(code) + (0, exports.serializeIndex)(subindex) + (0, exports.serializeCharacterSpec)(characterSpec);
+    const { index, codes, subindex, characterSpec } = subfieldSpec;
+    return (0, exports.serializeIndex)(index) + codes.map(exports.serializeCode).join('') + (0, exports.serializeIndex)(subindex) + (0, exports.serializeCharacterSpec)(characterSpec);
 };
 exports.serializeAbbrSubfieldSpec = serializeAbbrSubfieldSpec;
 const serializeIndex = (index) => {

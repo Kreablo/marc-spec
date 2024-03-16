@@ -64,16 +64,16 @@ export declare class SubfieldCode {
     constructor(start: string, end: string);
 }
 export declare class SubfieldSpec extends ItemSpec {
-    readonly code: SubfieldCode;
+    readonly codes: SubfieldCode[];
     readonly subindex: IndexSpec | undefined;
     readonly characterSpec: CharacterSpec | undefined;
-    constructor(tag: string, index: IndexSpec | undefined, code: SubfieldCode, subindex: IndexSpec | undefined, characterSpec: CharacterSpec | undefined, subSpec: SubTermSet[][]);
+    constructor(tag: string, index: IndexSpec | undefined, codes: SubfieldCode[], subindex: IndexSpec | undefined, characterSpec: CharacterSpec | undefined, subSpec: SubTermSet[][]);
 }
 export declare class AbbrSubfieldSpec extends AbbrSpec {
-    readonly code: SubfieldCode;
+    readonly codes: SubfieldCode[];
     readonly subindex: IndexSpec | undefined;
     readonly characterSpec: CharacterSpec | undefined;
-    constructor(index: IndexSpec | undefined, code: SubfieldCode, subindex: IndexSpec | undefined, characterSpec: CharacterSpec | undefined);
+    constructor(index: IndexSpec | undefined, codes: SubfieldCode[], subindex: IndexSpec | undefined, characterSpec: CharacterSpec | undefined);
 }
 export declare class IndicatorSpec extends ItemSpec {
     readonly indicator: number;

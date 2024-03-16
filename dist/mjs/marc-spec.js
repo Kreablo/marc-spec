@@ -68,17 +68,17 @@ export class SubfieldCode {
     }
 }
 export class SubfieldSpec extends ItemSpec {
-    constructor(tag, index, code, subindex, characterSpec, subSpec) {
+    constructor(tag, index, codes, subindex, characterSpec, subSpec) {
         super(tag, index, subSpec);
-        this.code = code;
+        this.codes = codes;
         this.subindex = subindex;
         this.characterSpec = characterSpec;
     }
 }
 export class AbbrSubfieldSpec extends AbbrSpec {
-    constructor(index, code, subindex, characterSpec) {
+    constructor(index, codes, subindex, characterSpec) {
         super(index);
-        this.code = code;
+        this.codes = codes;
         this.subindex = subindex;
         this.characterSpec = characterSpec;
     }
@@ -101,8 +101,8 @@ const toAbbr = (spec) => {
         return new AbbrFieldSpec(index, characterSpec);
     }
     if (spec instanceof SubfieldSpec) {
-        const { index, code, subindex, characterSpec } = spec;
-        return new AbbrSubfieldSpec(index, code, subindex, characterSpec);
+        const { index, codes, subindex, characterSpec } = spec;
+        return new AbbrSubfieldSpec(index, codes, subindex, characterSpec);
     }
     const { index, indicator } = spec;
     return new AbbrIndicatorSpec(indicator, index);
@@ -317,8 +317,8 @@ export const abbrIndicatorSpec = apply(kright(tok(TokenType.INDICATOR_MARKER), t
 export const fieldSpec = apply(opt_sc(characterSpec), (cspec) => (tag, index, subSpec) => new FieldSpec(tag, index, cspec, subSpec));
 export const abbrFieldSpec = apply(opt_sc(characterSpec), (cspec) => (index) => new AbbrFieldSpec(index, cspec));
 export const subfieldCode = apply(seq(tok(TokenType.SUBFIELD_MARKER), tok(TokenType.SUBFIELD_CHAR), opt_sc(seq(tok(TokenType.RANGE_MARK), tok(TokenType.SUBFIELD_CHAR)))), ([_1, start, mend]) => new SubfieldCode(start.text, mend === undefined ? start.text : mend[1].text));
-export const abbrSubfieldSpec = apply(seq(subfieldCode, opt_sc(index), opt_sc(characterSpec)), ([code, ispec, cspec]) => (index) => new AbbrSubfieldSpec(index, code, ispec, cspec));
-export const subfieldSpec = apply(seq(subfieldCode, opt_sc(index), opt_sc(characterSpec)), ([code, ispec, cspec]) => (tag, index, subSpec) => new SubfieldSpec(tag, index, code, ispec, cspec, subSpec));
+export const abbrSubfieldSpec = apply(seq(subfieldCode, rep_sc(subfieldCode), opt_sc(index), opt_sc(characterSpec)), ([code, codes, ispec, cspec]) => (index) => new AbbrSubfieldSpec(index, [code].concat(codes), ispec, cspec));
+export const subfieldSpec = apply(seq(subfieldCode, rep_sc(subfieldCode), opt_sc(index), opt_sc(characterSpec)), ([code, codes, ispec, cspec]) => (tag, index, subSpec) => new SubfieldSpec(tag, index, [code].concat(codes), ispec, cspec, subSpec));
 export const abbreviation = apply(seq(opt_sc(index), alt_sc(abbrSubfieldSpec, abbrIndicatorSpec, abbrFieldSpec)), ([index, alt1]) => alt1(index));
 const specStart = apply(seq(tok(TokenType.FIELD_TAG), opt_sc(index)), ([token, index]) => [token.text, index]);
 export const fullSpec = apply(seq(specStart, alt_sc(subfieldSpec, indicatorSpec, fieldSpec)), ([[tag, index], alt1]) => (subSpec) => alt1(tag, index, subSpec));
@@ -400,12 +400,12 @@ export const serializeAbbrIndicatorSpec = (indicatorSpec) => {
     return serializeIndex(index) + '^' + indicator;
 };
 export const serializeSubfieldSpec = (subfieldSpec) => {
-    const { tag, index, code, subindex, characterSpec, subSpec } = subfieldSpec;
-    return tag + serializeIndex(index) + serializeCode(code) + serializeIndex(subindex) + serializeCharacterSpec(characterSpec) + serializeSubSpec(subSpec);
+    const { tag, index, codes, subindex, characterSpec, subSpec } = subfieldSpec;
+    return tag + serializeIndex(index) + codes.map(serializeCode).join('') + serializeIndex(subindex) + serializeCharacterSpec(characterSpec) + serializeSubSpec(subSpec);
 };
 export const serializeAbbrSubfieldSpec = (subfieldSpec) => {
-    const { index, code, subindex, characterSpec } = subfieldSpec;
-    return serializeIndex(index) + serializeCode(code) + serializeIndex(subindex) + serializeCharacterSpec(characterSpec);
+    const { index, codes, subindex, characterSpec } = subfieldSpec;
+    return serializeIndex(index) + codes.map(serializeCode).join('') + serializeIndex(subindex) + serializeCharacterSpec(characterSpec);
 };
 export const serializeIndex = (index) => {
     if (index === undefined) {

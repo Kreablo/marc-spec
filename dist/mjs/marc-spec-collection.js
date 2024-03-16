@@ -4,6 +4,7 @@ import { base64RecordAsByteArray, extractFields } from './marc-parser';
 export class MarcSpecCollection {
     constructor() {
         this.collection = new Map();
+        this.record = null;
     }
     addSpec(marcSpec) {
         if (this.collection.has(marcSpec)) {
@@ -18,6 +19,9 @@ export class MarcSpecCollection {
         }
         const t = buildTree(r);
         this.collection.set(marcSpec, [t, r]);
+        if (this.record !== null) {
+            extractFields(this.record, t.subscribers);
+        }
         return [t, r];
     }
     get subscribers() {
@@ -28,6 +32,7 @@ export class MarcSpecCollection {
     }
     loadRecordBinary(record) {
         this.reset();
+        this.record = record;
         extractFields(record, this.subscribers);
     }
     reset() {
